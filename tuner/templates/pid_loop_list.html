@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>PID Loop List</h1>
+<ul>
+    {% for loop in loops %}
+        <li><a href="{% url 'pid_loop_detail' loop.id %}">{{ loop.name }}</a></li>
+    {% empty %}
+        <li>No PID Loops found.</li>
+    {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Uploaded Trend Charts</h2>
+<ul>
+    {% for chart in charts %}
+        <li>
+            {{ chart.pid_loop.name }} -
+            <a href="{% url 'view_trend_chart' chart.id %}">View Trend</a> |
+            <a href="{{ chart.csv_file.url }}" download>Download CSV</a>
+        </li>
+    {% endfor %}
+</ul>
+
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <label for="id_pid_loop">Select PID Loop:</label>
+    {{ form.pid_loop }}
+
+    <label for="id_file">Upload Trend Chart:</label>
+    {{ form.file }}
+
+    <button type="submit">Upload</button>
+</form>
+
+{% endblock %}

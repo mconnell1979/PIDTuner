@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="container">
+    <h1>Welcome to PIDTuner</h1>
+    <p>This tool helps you calculate tuning parameters for PID loops.</p>
+
+    <h2>Navigation</h2>
+    <ul>
+      <li><a href="{% url 'pid_loop_list' %}">View PID Loops</a></li>
+      <li><a href="{% url 'upload_trend_chart' %}">Upload Trend Chart (CSV)</a></li>
+      <li><a href="{% url 'trend_chart_list' %}">View Trend Charts</a></li>
+      <li><a href="/admin/">Admin Panel</a></li>
+    </ul>
+  </div>
+{% endblock %}
