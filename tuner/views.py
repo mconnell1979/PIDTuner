@@ -163,7 +163,6 @@ def view_trend_chart(request, chart_id):
         "chart_data": json.dumps(chart_data, ensure_ascii=False),  # ✅ Fix JSON encoding
         "bump_tests": json.dumps(bump_test_list, ensure_ascii=False) if bump_test_list else "[]",
     }
-    print("DEBUG: Retrieved Bump Tests:", json.dumps(bump_test_list, indent=2))
     return render(request, "view_trend_chart.html", context)
 
 
