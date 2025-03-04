@@ -1,0 +1,12 @@
+# Ignore compiled Python files
+__pycache__/
+*.pyc
+
+# Ignore media files
+media/
+
+# Ignore virtual environment (if inside the project)
+venv/
+
+# Ignore database migrations cache
+*/migrations/*.pyc
