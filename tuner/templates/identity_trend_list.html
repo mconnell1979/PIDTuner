@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="container">
+    <h1>PID Loops with Identity Trends</h1>
+
+    <p>Select a bump test to view the identity trend.</p>
+
+    <!-- Iterate through the PID loops -->
+    {% for pid_loop in pid_loop_data %}
+      <h2>{{ pid_loop.pid_loop.name }}</h2>
+
+      {% for trend_chart in pid_loop.trend_charts %}
+        <h3>{{ trend_chart.name }}</h3>
+
+        <ul>
+          {% for bump in pid_loop.bump_tests %}
+            {% if bump.bump_id %}
+              <li>
+                <a href="{% url 'identity_trend_detail' chart_id=trend_chart.id bump_test_id=bump.bump_id %}">
+                  Bump {{ forloop.counter }} - {{ bump.start_time }} to {{ bump.end_time }}
+                </a>
+              </li>
+            {% else %}
+              <li>No Bump Test Available</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% endfor %}
+  {% endfor %}
+  </div>
+{% endblock %}

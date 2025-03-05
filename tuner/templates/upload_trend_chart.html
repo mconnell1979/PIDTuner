@@ -7,19 +7,23 @@
         <li>
             {{ chart.pid_loop.name }} -
             <a href="{% url 'view_trend_chart' chart.id %}">View Trend</a> |
-            <a href="{{ chart.csv_file.url }}" download>Download CSV</a>
+            <a href="{{ chart.file.url }}" download>Download CSV</a>
+            <br>
+            <small>{{ chart.description }}</small>  {# Shows description if available #}
         </li>
     {% endfor %}
 </ul>
 
-<form method="POST" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-
     <label for="id_pid_loop">Select PID Loop:</label>
     {{ form.pid_loop }}
 
-    <label for="id_file">Upload Trend Chart:</label>
-    {{ form.file }}
+    <label for="id_csv_file">Upload CSV File:</label>
+    <input type="file" name="csv_file" id="id_csv_file">  <!-- ✅ Must match field name -->
+
+    <label for="id_description">Description:</label>
+    {{ form.description }}
 
     <button type="submit">Upload</button>
 </form>

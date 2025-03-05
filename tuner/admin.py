@@ -10,9 +10,14 @@ class BumpTestAdmin(admin.ModelAdmin):
     get_pid_loop.admin_order_field = 'trend_chart__pid_loop'  # Allows sorting
     get_pid_loop.short_description = 'PID Loop'  # Column name in admin
 
+@admin.register(TrendChart)
+class TrendChartAdmin(admin.ModelAdmin):
+    list_display = ("id", "pid_loop", "description", "uploaded_at")
+    search_fields = ("id", "pid_loop__name", "description")
+    list_filter = ("uploaded_at",)
+
 admin.site.register(BumpTest, BumpTestAdmin)
 admin.site.register(PIDLoop)
-admin.site.register(TrendChart)
 admin.site.register(LambdaVariable)
 admin.site.register(PIDCalculation)
 

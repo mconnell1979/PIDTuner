@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>PID Calculations</h2>
+<table border="1">
+    <tr>
+        <th>PID Loop Name</th>
+        <th>PID Type</th>
+        <th>Actions</th>
+    </tr>
+    {% for pid_loop in pid_loops %}
+    <tr>
+        <td>{{ pid_loop.name }}</td>
+        <td>{{ pid_loop.pid_type }}</td>
+        <td><a href="{% url 'pid_calculation_detail' pid_loop.id %}">View Calculation</a></td>
+    </tr>
+    {% empty %}
+    <tr>
+        <td colspan="3">No PID Loops available.</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

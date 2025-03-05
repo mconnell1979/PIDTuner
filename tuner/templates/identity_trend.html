@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="container">
+    <h1>PID Loops with Identity Trends</h1>
+
+    <p>Select a bump test to view the identity trend.</p>
+
+    <!-- Iterate through the PID loops -->
+    {% for data in pid_loop_data %}
+      <div class="pid-loop">
+        <h2>{{ data.pid_loop.name }}</h2>
+
+        <h3>Trend Charts</h3>
+        <ul>
+          <!-- Iterate through the trend charts for the current PID loop -->
+          {% for trend_chart in data.trend_charts %}
+            <li>
+              <strong>Trend Chart ID: {{ trend_chart.id }}</strong>
+              <ul>
+                {% if data.bump_tests.first %}
+                  <li><a href="{% url 'identity_trend_detail' chart_id=trend_chart.id bump_test_id=data.bump_tests.first.id %}">View Identity Trend</a></li>
+                {% else %}
+                  <li>No bump test available for this trend chart.</li>
+                {% endif %}
+              </ul>
+            </li>
+          {% empty %}
+            <li>No trend charts available for this PID loop.</li>
+          {% endfor %}
+        </ul>
+
+        <h3>Bump Tests</h3>
+        <ul>
+          <!-- Iterate through the bump tests for the current PID loop -->
+          {% for bump_test in data.bump_tests %}
+            <li>
+              <strong>Bump Test ID: {{ bump_test.id }}</strong>
+              <ul>
+                <li><a href="{% url 'identity_trend_detail' chart_id=trend_chart.id bump_test_id=bump_test.id %}">View Identity Trend</a></li>
+              </ul>
+            </li>
+          {% empty %}
+            <li>No bump tests available for this PID loop.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% empty %}
+      <p>No PID loops found.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Identity Trend for {{ trend_chart.pid_loop.name }}</h1>
+    <h2>Bump Test: {{ bump_test.start_time }} to {{ bump_test.end_time }}</h2>
+
+    <label for="T1">T1:</label>
+    <input type="text" id="T1" name="T1" value="{{ bump_test.T1|date:'Y-m-d H:i:s'|default:'' }}" readonly>
+
+    <label for="T2">T2:</label>
+    <input type="text" id="T2" name="T2" value="{{ bump_test.T2|date:'Y-m-d H:i:s'|default:'' }}" readonly>
+
+    <label for="T3">T3:</label>
+    <input type="text" id="T3" name="T3" value="{{ bump_test.T3|date:'Y-m-d H:i:s'|default:'' }}" readonly>
+
+    <label for="T4">T4:</label>  <!-- ✅ Add T4 input field -->
+    <input type="text" id="T4" name="T4" value="{{ bump_test.T4|date:'Y-m-d H:i:s'|default:'' }}" readonly>
+
+    <button id="saveT1T2">Save T1, T2, T3, T4</button>
+
+    <div id="identityTrendChart"></div>
+</div>
+
+<!-- JavaScript to Display Annotations -->
+<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        let selectedField = null;
+        let bumpTestId = "{{ bump_test.id }}".trim();
+        let plotDiv = document.getElementById("identityTrendChart");
+
+        let chartData;
+        try {
+            chartData = JSON.parse(`{{ chart_data|escapejs }}`);
+            console.log("📌 Chart Data Loaded:", chartData);
+        } catch (error) {
+            console.error("❌ Error parsing chart data:", error);
+            return;
+        }
+
+        let tMarkers;
+        try {
+            tMarkers = JSON.parse(`{{ t_markers|escapejs }}`);
+            console.log("📌 T1-T4 Markers:", tMarkers);
+        } catch (error) {
+            console.error("❌ Error parsing T1-T4 markers:", error);
+            return;
+        }
+
+        if (!Array.isArray(chartData) || chartData.length === 0) {
+            console.error("❌ No data available for plotting.");
+            return;
+        }
+
+        // ✅ Retrieve Notes from Django
+        let tNotes = {
+            T1: "{{ bump_test.T1_note|default:'No Note' }}",
+            T2: "{{ bump_test.T2_note|default:'No Note' }}",
+            T3: "{{ bump_test.T3_note|default:'No Note' }}",
+            T4: "{{ bump_test.T4_note|default:'No Note' }}"
+        };
+
+        let pvTrace = {
+            x: chartData.map(dataPoint => dataPoint.Time),
+            y: chartData.map(dataPoint => dataPoint.PV),
+            name: "PV Trend",
+            mode: "lines",
+            line: { color: "#6B8E23", width: 2 }
+        };
+
+        let cvTrace = {
+            x: chartData.map(dataPoint => dataPoint.Time),
+            y: chartData.map(dataPoint => dataPoint.CV),
+            name: "CV Trend",
+            mode: "lines",
+            line: { color: "black", width: 2, dash: "solid" }
+        };
+
+        // ✅ Modify T1-T4 markers to include Notes in the Legend
+        let markerColors = ["red", "blue", "orange", "purple"];
+        let markerLabels = ["T1", "T2", "T3", "T4"];
+        let markerTraces = [];
+
+        Object.entries(tMarkers).forEach(([key, data], index) => {
+            if (data.time) {
+                markerTraces.push({
+                    x: [data.time],
+                    y: [data.pv],  // ✅ Attach to the PV trend value
+                    mode: "markers",
+                    name: `${markerLabels[index]} - ${tNotes[key]}`,  // ✅ Show notes in the legend
+                    marker: { color: markerColors[index], size: 10 }
+                });
+            }
+        });
+
+        let layout = {
+            title: "Process Variable (PV) & Control Variable (CV)",
+            xaxis: { title: "Time", type: "date" },
+            yaxis: { title: "Value" },
+            showlegend: true,
+            hovermode: "closest"
+        };
+
+        console.log("📌 Initializing Plotly chart...");
+        Plotly.newPlot(plotDiv, [pvTrace, cvTrace, ...markerTraces], layout);
+    });
+</script>
+
+
+
+
+
+{% endblock %}
