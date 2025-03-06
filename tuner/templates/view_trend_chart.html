@@ -45,149 +45,176 @@
     <!-- Load latest Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 
-    <script>
-        // ✅ Define zoomToBump function globally to ensure it's accessible
-        function zoomToBump(bumpId, startTime, endTime) {
-            console.log(`📌 Zooming to Bump ${bumpId} from ${startTime} to ${endTime}`);
-
-            let plotDiv = document.getElementById("identityTrendChart");
-
-            if (!plotDiv) {
-                console.error("❌ Chart element not found.");
-                return;
-            }
-
-            // ✅ Ensure JavaScript treats these as local times (not UTC)
-            let startParts = startTime.split(/[- :]/);
-            let endParts = endTime.split(/[- :]/);
-
-            let localStart = new Date(startParts[0], startParts[1] - 1, startParts[2], startParts[3], startParts[4], startParts[5]);
-            let localEnd = new Date(endParts[0], endParts[1] - 1, endParts[2], endParts[3], endParts[4], endParts[5]);
-
-            console.log(`📌 Adjusted Zoom Range (local): ${localStart} to ${localEnd}`);
-
-            Plotly.relayout(plotDiv, {
-                "xaxis.range": [localStart, localEnd]  // ✅ Keep as local time (no .toISOString())
-            });
-
-            console.log(`✅ Zoomed to Bump ${bumpId} successfully.`);
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        let chartData;
+        try {
+            chartData = JSON.parse(`{{ chart_data|escapejs }}`);
+            console.log("📌 Chart Data Loaded:", chartData);
+        } catch (error) {
+            console.error("❌ Error parsing chart data:", error);
+            return;
         }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            let chartData;
-            try {
-                chartData = JSON.parse(`{{ chart_data|escapejs }}`);
-                console.log("📌 Chart Data Loaded:", chartData);
-            } catch (error) {
-                console.error("❌ Error parsing chart data:", error);
-                return;
-            }
-
-            if (!chartData || chartData.length === 0) {
-                console.error("❌ No data available for plotting.");
-                return;
-            }
-
-            let pvTrace = {
-                x: chartData.map(row => row.Time),
-                y: chartData.map(row => row.PV),
-                name: "PV Trend",
-                mode: "lines",
-                line: { color: "#6B8E23", width: 2 }
-            };
-
-            let cvTrace = {
-                x: chartData.map(row => row.Time),
-                y: chartData.map(row => row.CV),
-                name: "CV Trend",
-                mode: "lines",
-                line: { color: "black", width: 2, dash: "solid" }
-            };
-
-            let layout = {
-                title: "Process Variable (PV) & Control Variable (CV)",
-                xaxis: {
-                    title: "Time",
-                    type: "date",
-                },
-                yaxis: { title: "Value" },
-                showlegend: true,
-                hovermode: "closest",
-            };
-
-            let plotDiv = document.getElementById("identityTrendChart");
-            console.log("📌 Plotting chart...");
-            Plotly.newPlot(plotDiv, [pvTrace, cvTrace], layout);
-        });
-
-        function deleteBump(bumpId) {
-            if (!confirm("Are you sure you want to delete this bump test?")) return;
-
-            fetch("{% url 'delete_bump' %}", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": "{{ csrf_token }}"
-                },
-                body: JSON.stringify({ bump_id: bumpId })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log(`✅ Bump ${bumpId} deleted successfully.`);
-                    document.getElementById(`bumpRow-${bumpId}`).remove();
-                } else {
-                    console.error(`❌ Error deleting bump:`, data.error);
-                    alert("Error deleting bump: " + data.error);
-                }
-            })
-            .catch(error => {
-                console.error("❌ Request failed:", error);
-                alert("Failed to delete bump.");
-            });
+        if (!chartData || chartData.length === 0) {
+            console.error("❌ No data available for plotting.");
+            return;
         }
 
-        document.getElementById("saveBump").addEventListener("click", function () {
-            console.log("📌 Saving new bump...");
+        // ✅ Convert timestamps to UTC format
+        let pvTrace = {
+            x: chartData.map(row => new Date(row.Time)),  // Ensure it's treated as a Date object
+            y: chartData.map(row => row.PV),
+            name: "PV Trend",
+            mode: "lines",
+            line: { color: "#6B8E23", width: 2 }
+        };
 
-            let plotDiv = document.getElementById("identityTrendChart");
-            let zoomRange = plotDiv.layout.xaxis.range;
-            if (!zoomRange || zoomRange.length < 2) {
-                console.error("❌ Invalid zoom range detected:", zoomRange);
-                alert("Please zoom into a valid time range before saving.");
-                return;
-            }
+        let cvTrace = {
+            x: chartData.map(row => new Date(row.Time)),
+            y: chartData.map(row => row.CV),
+            name: "CV Trend",
+            mode: "lines",
+            line: { color: "black", width: 2, dash: "solid" }
+        };
 
-            let formattedStart = new Date(zoomRange[0]).toISOString().slice(0, 19).replace("T", " ");
-            let formattedEnd = new Date(zoomRange[1]).toISOString().slice(0, 19).replace("T", " ");
+        // ✅ Generate bump highlight boxes with light transparent grayish-green color
+        let bumpBoxes = [];
+        let minY = Math.min(...chartData.map(row => row.PV), ...chartData.map(row => row.CV)); // Lowest value on chart
+        let maxY = Math.max(...chartData.map(row => row.PV), ...chartData.map(row => row.CV)); // Highest value on chart
 
-            fetch("{% url 'save_bump' chart_id=trend_chart.id %}", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRFToken": "{{ csrf_token }}"
+        {% for bump in bump_tests %}
+            bumpBoxes.push({
+                type: "rect",
+                x0: new Date("{{ bump.start_time }}"),
+                x1: new Date("{{ bump.end_time }}"),
+                y0: minY,  // Full height
+                y1: maxY,
+                fillcolor: "rgba(143, 188, 143, 0.3)",  // Light Grayish-Green (RGBA: Sage Green)
+                line: {
+                    color: "rgba(60, 100, 60, 0.8)",  // Dark green for contrast
+                    width: 1.5,
+                    dash: "dash"  // Dashed border
                 },
-                body: JSON.stringify({
-                    trend_chart_id: "{{ trend_chart.id }}",
-                    bump_start: formattedStart,
-                    bump_end: formattedEnd
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log("✅ Bump saved successfully:", data);
-                    alert("Bump saved successfully!");
-                    location.reload();
-                } else {
-                    console.error("❌ Error saving bump:", data.error);
-                    alert("Error saving bump: " + data.error);
-                }
-            })
-            .catch(error => {
-                console.error("❌ Request failed:", error);
-                alert("Failed to save bump.");
+                opacity: 0.4
             });
+        {% endfor %}
+
+        let layout = {
+            title: "Process Variable (PV) & Control Variable (CV)",
+            xaxis: {
+                title: "Time",
+                type: "date",
+            },
+            yaxis: { title: "Value" },
+            showlegend: true,
+            hovermode: "closest",
+            shapes: bumpBoxes  // ✅ Adds bump boxes with dashed borders
+        };
+
+        let plotDiv = document.getElementById("identityTrendChart");
+        console.log("📌 Plotting chart...");
+        Plotly.newPlot(plotDiv, [pvTrace, cvTrace], layout);
+    });
+
+    function zoomToBump(bumpId, startTime, endTime) {
+        console.log(`📌 Zooming to Bump ${bumpId} from ${startTime} to ${endTime}`);
+
+        let plotDiv = document.getElementById("identityTrendChart");
+        if (!plotDiv) {
+            console.error("❌ Chart element not found.");
+            return;
+        }
+
+        let localStart = new Date(startTime);
+        let localEnd = new Date(endTime);
+
+        console.log(`📌 Adjusted Zoom Range (UTC): ${localStart} to ${localEnd}`);
+
+        Plotly.relayout(plotDiv, {
+            "xaxis.range": [localStart, localEnd]
         });
-    </script>
+
+        console.log(`✅ Zoomed to Bump ${bumpId} successfully.`);
+    }
+
+    document.getElementById("saveBump").addEventListener("click", function () {
+        console.log("📌 Saving new bump...");
+
+        let plotDiv = document.getElementById("identityTrendChart");
+        let zoomRange = plotDiv.layout.xaxis.range;
+        if (!zoomRange || zoomRange.length < 2) {
+            console.error("❌ Invalid zoom range detected:", zoomRange);
+            alert("Please zoom into a valid time range before saving.");
+            return;
+        }
+
+        let formattedStart = new Date(zoomRange[0]).toISOString();
+        let formattedEnd = new Date(zoomRange[1]).toISOString();
+
+        fetch("{% url 'save_bump' chart_id=trend_chart.id %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({
+                trend_chart_id: "{{ trend_chart.id }}",
+                bump_start: formattedStart,
+                bump_end: formattedEnd
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log("✅ Bump saved successfully:", data);
+                alert("Bump saved successfully!");
+                location.reload();
+            } else {
+                console.error("❌ Error saving bump:", data.error);
+                alert("Error saving bump: " + data.error);
+            }
+        })
+        .catch(error => {
+            console.error("❌ Request failed:", error);
+            alert("Failed to save bump.");
+        });
+    });
+
+    function deleteBump(bumpId) {
+        if (!confirm("Are you sure you want to delete this bump test?")) {
+            return;
+        }
+
+        console.log(`📌 Deleting bump ${bumpId}...`);
+
+        fetch("{% url 'delete_bump' %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({
+                bump_id: bumpId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`✅ Bump ${bumpId} deleted successfully.`);
+                alert("Bump deleted successfully!");
+                document.getElementById(`bumpRow-${bumpId}`).remove();
+            } else {
+                console.error("❌ Error deleting bump:", data.error);
+                alert("Error deleting bump: " + data.error);
+            }
+        })
+        .catch(error => {
+            console.error("❌ Request failed:", error);
+            alert("Failed to delete bump.");
+        });
+    }
+</script>
+
+
 {% endblock %}
