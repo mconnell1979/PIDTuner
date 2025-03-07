@@ -1,7 +1,7 @@
+import pandas as pd
+from datetime import datetime
 from django.db import models
 from django.utils.timezone import now, localtime, get_current_timezone, is_naive, make_aware
-import pandas as pd
-import pytz
 
 
 class PIDLoop(models.Model):
@@ -93,52 +93,44 @@ class TrendChart(models.Model):
                 continue
         return pd.to_datetime(series, utc=True, errors="coerce")  # Fallback
 
-
     @staticmethod
     def clean_timestamps(df):
-        """Detects datetime format, parses timestamps, and converts them to UTC."""
-
+        """
+        Cleans and standardizes the Time column in the DataFrame.
+        Ensures datetime values are in UTC.
+        """
         if "Time" not in df.columns:
-            raise ValueError("Time column missing in uploaded file.")
+            raise ValueError("Missing 'Time' column in DataFrame.")
 
-        # ✅ Ensure the first non-null value is a string
-        sample_time_series = df["Time"].dropna().astype(str)
-        sample_time = sample_time_series.iloc[0] if not sample_time_series.empty else None
+        # List of known formats to try
+        known_formats = [
+            "%m/%d/%Y %I:%M:%S.%f %p",  # MM/DD/YYYY hh:mm:ss.sss AM/PM
+            "%m/%d/%Y %I:%M:%S %p",  # MM/DD/YYYY hh:mm:ss AM/PM (no ms)
+            "%Y-%m-%d %H:%M:%S.%f",  # YYYY-MM-DD HH:MM:SS.sss
+            "%Y-%m-%d %H:%M:%S",  # YYYY-MM-DD HH:MM:SS (no ms)
+        ]
 
-        if not sample_time:
-            raise ValueError("No valid timestamps found in the 'Time' column.")
+        def try_parsing_time(time_str):
+            """Attempts parsing using predefined formats."""
+            if pd.isna(time_str) or not isinstance(time_str, str):
+                return None
 
-        # ✅ Detect if milliseconds are present
-        time_parts = sample_time.strip().split(" ")
+            for fmt in known_formats:
+                try:
+                    return datetime.strptime(time_str, fmt)
+                except ValueError:
+                    continue
 
-        if len(time_parts) > 1 and "." in time_parts[1]:  # Checks HH:MM:SS.fff presence
-            timestamp_format = "%m/%d/%Y %I:%M:%S.%f %p"  # Includes milliseconds
-        else:
-            timestamp_format = "%m/%d/%Y %I:%M:%S %p"  # No milliseconds
+            return pd.NaT  # Return NaT if parsing fails
 
-        print(f"📌 Detected datetime format: {timestamp_format}")
+        # Apply explicit parsing instead of relying on Pandas auto-inference
+        df["Time"] = df["Time"].apply(try_parsing_time)
 
-        # ✅ Convert timestamps using detected format
-        try:
-            df["Time"] = pd.to_datetime(df["Time"], format=timestamp_format, errors="coerce")
-        except Exception as e:
-            raise ValueError(f"Error parsing timestamps: {str(e)}")
+        # Drop invalid rows (NaT)
+        df.dropna(subset=["Time"], inplace=True)
 
-        # ✅ Drop rows with invalid timestamps
-        invalid_times = df["Time"].isna().sum()
-        if invalid_times > 0:
-            print(f"⚠️ {invalid_times} rows had invalid timestamps and were dropped.")
-            df.dropna(subset=["Time"], inplace=True)
-
-        # ✅ Convert to UTC (assuming source timestamps are in America/Chicago)
-        local_tz = pytz.timezone("America/Chicago")
-        try:
-            df["Time"] = df["Time"].dt.tz_localize(local_tz, ambiguous="NaT",
-                                                   nonexistent="shift_forward").dt.tz_convert(pytz.UTC)
-        except Exception as e:
-            raise ValueError(f"Error converting timestamps to UTC: {str(e)}")
-
-        print(f"✅ First 5 timestamps after UTC conversion:\n{df[['Time']].head()}")
+        # Convert to UTC
+        df["Time"] = pd.to_datetime(df["Time"], utc=True)
 
         return df
 

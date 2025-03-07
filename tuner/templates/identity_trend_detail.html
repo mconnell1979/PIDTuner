@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+
 <div class="container">
     <h1>Identity Trend for {{ trend_chart.pid_loop.name }}</h1>
     <h2>Bump Test: {{ bump_test.start_time }} to {{ bump_test.end_time }}</h2>
@@ -14,7 +15,7 @@
     <label for="T3">T3:</label>
     <input type="text" id="T3" name="T3" value="{{ bump_test.T3|date:'Y-m-d H:i:s'|default:'' }}" readonly>
 
-    <label for="T4">T4:</label>  <!-- ✅ Add T4 input field -->
+    <label for="T4">T4:</label>
     <input type="text" id="T4" name="T4" value="{{ bump_test.T4|date:'Y-m-d H:i:s'|default:'' }}" readonly>
 
     <button id="saveT1T2">Save T1, T2, T3, T4</button>
@@ -27,14 +28,19 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function () {
-        let selectedField = null;
-        let bumpTestId = "{{ bump_test.id }}".trim();
-        let plotDiv = document.getElementById("identityTrendChart");
+        console.log("📌 Initializing Trend Chart...");
+
+        // ✅ Convert bump test times to UTC
+        let bumpTestStart = new Date("{{ bump_test.start_time|date:'c' }}").toISOString();
+        let bumpTestEnd = new Date("{{ bump_test.end_time|date:'c' }}").toISOString();
+
+        console.log("📌 Bump Window Start (Forced UTC):", bumpTestStart);
+        console.log("📌 Bump Window End (Forced UTC):", bumpTestEnd);
 
         let chartData;
         try {
             chartData = JSON.parse(`{{ chart_data|escapejs }}`);
-            console.log("📌 Chart Data Loaded:", chartData);
+            console.log("📌 Loaded Chart Data:", chartData);
         } catch (error) {
             console.error("❌ Error parsing chart data:", error);
             return;
@@ -43,7 +49,7 @@
         let tMarkers;
         try {
             tMarkers = JSON.parse(`{{ t_markers|escapejs }}`);
-            console.log("📌 T1-T4 Markers:", tMarkers);
+            console.log("📌 Raw tMarkers JSON:", tMarkers);
         } catch (error) {
             console.error("❌ Error parsing T1-T4 markers:", error);
             return;
@@ -54,60 +60,71 @@
             return;
         }
 
-        // ✅ Retrieve Notes from Django
-        let tNotes = {
-            T1: "{{ bump_test.T1_note|default:'No Note' }}",
-            T2: "{{ bump_test.T2_note|default:'No Note' }}",
-            T3: "{{ bump_test.T3_note|default:'No Note' }}",
-            T4: "{{ bump_test.T4_note|default:'No Note' }}"
-        };
+        function drawChart(data) {
+            // ✅ Convert all timestamps in data to UTC format
+            let parsedData = data.map(d => ({
+                x: new Date(d.Time).toISOString(),  // Convert to UTC
+                PV: parseFloat(d.PV),
+                CV: parseFloat(d.CV)
+            }));
 
-        let pvTrace = {
-            x: chartData.map(dataPoint => dataPoint.Time),
-            y: chartData.map(dataPoint => dataPoint.PV),
-            name: "PV Trend",
-            mode: "lines",
-            line: { color: "#6B8E23", width: 2 }
-        };
+            console.log("📌 Data Sent to Plotly:", parsedData);
+            console.log("📌 First Timestamp in Data:", parsedData[0].x);
+            console.log("📌 Last Timestamp in Data:", parsedData[parsedData.length - 1].x);
 
-        let cvTrace = {
-            x: chartData.map(dataPoint => dataPoint.Time),
-            y: chartData.map(dataPoint => dataPoint.CV),
-            name: "CV Trend",
-            mode: "lines",
-            line: { color: "black", width: 2, dash: "solid" }
-        };
+            let pvTrace = {
+                x: parsedData.map(d => d.x),
+                y: parsedData.map(d => d.PV),
+                name: "PV Trend",
+                mode: "lines",
+                line: { color: "#6B8E23", width: 2 }
+            };
 
-        // ✅ Modify T1-T4 markers to include Notes in the Legend
-        let markerColors = ["red", "blue", "orange", "purple"];
-        let markerLabels = ["T1", "T2", "T3", "T4"];
-        let markerTraces = [];
+            let cvTrace = {
+                x: parsedData.map(d => d.x),
+                y: parsedData.map(d => d.CV),
+                name: "CV Trend",
+                mode: "lines",
+                line: { color: "black", width: 2, dash: "solid" }
+            };
 
-        Object.entries(tMarkers).forEach(([key, data], index) => {
-            if (data.time) {
-                markerTraces.push({
-                    x: [data.time],
-                    y: [data.pv],  // ✅ Attach to the PV trend value
-                    mode: "markers",
-                    name: `${markerLabels[index]} - ${tNotes[key]}`,  // ✅ Show notes in the legend
-                    marker: { color: markerColors[index], size: 10 }
+            let layout = {
+                title: "{{ trend_chart.pid_loop.name }} - Bump {{ bump_test.id }}",
+                xaxis: {
+                    title: "Time",
+                    type: "date",
+                    range: [bumpTestStart, bumpTestEnd],  // ✅ Ensure proper range
+                    showgrid: true,
+                },
+                yaxis: { title: "Value" },
+                hovermode: "closest"
+            };
+
+            Plotly.newPlot("identityTrendChart", [pvTrace, cvTrace], layout);
+        }
+
+        function zoomToBump(startTime, endTime) {
+            console.log(`📌 Raw Zoom to Bump Window: ${startTime} → ${endTime}`);
+
+            // ✅ Explicitly parse as UTC and prevent local conversion
+            let utcStartTime = new Date(startTime).toISOString();
+            let utcEndTime = new Date(endTime).toISOString();
+
+            console.log(`📌 Converted to UTC: ${utcStartTime} → ${utcEndTime}`);
+
+            if (document.getElementById("identityTrendChart")) {
+                Plotly.relayout("identityTrendChart", {
+                    "xaxis.range": [utcStartTime, utcEndTime]
                 });
+            } else {
+                console.error("⚠️ identityTrendChart not found! Ensure the chart is properly initialized.");
             }
-        });
+        }
 
-        let layout = {
-            title: "Process Variable (PV) & Control Variable (CV)",
-            xaxis: { title: "Time", type: "date" },
-            yaxis: { title: "Value" },
-            showlegend: true,
-            hovermode: "closest"
-        };
-
-        console.log("📌 Initializing Plotly chart...");
-        Plotly.newPlot(plotDiv, [pvTrace, cvTrace, ...markerTraces], layout);
+        drawChart(chartData);
+        zoomToBump(bumpTestStart, bumpTestEnd);
     });
 </script>
-
 
 
 
