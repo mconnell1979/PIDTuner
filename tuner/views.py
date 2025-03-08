@@ -211,14 +211,13 @@ def save_bump(request, chart_id):
 
         trend_chart = get_object_or_404(TrendChart, id=chart_id)
 
-        # ✅ Parse datetime
+        # ✅ Parse ISO timestamps (they are already in UTC from JavaScript)
         bump_start_dt = parse_datetime(bump_start)
         bump_end_dt = parse_datetime(bump_end)
 
-        # ✅ Convert only if naive
+        # ✅ Ensure timestamps are stored as UTC (just in case)
         if not is_aware(bump_start_dt):
             bump_start_dt = make_aware(bump_start_dt)
-
         if not is_aware(bump_end_dt):
             bump_end_dt = make_aware(bump_end_dt)
 
@@ -296,54 +295,70 @@ def identity_trend_detail(request, bump_test_id, chart_id):
     if not trend_chart.csv_file:
         return JsonResponse({"error": "File not found."})
 
-    # Load CSV
+    # ✅ Load CSV
     df = pd.read_csv(trend_chart.csv_file.path)
+    print(f"🔍 Loaded {len(df)} rows from CSV")  # Debugging
 
-    # Ensure "Time" column exists
     if "Time" not in df.columns:
         return JsonResponse({"error": "Missing 'Time' column in trend file!"}, status=400)
 
-    # Convert time column to UTC datetime
+    # ✅ Convert "Time" column to datetime
     df["Time"] = pd.to_datetime(df["Time"], utc=True, errors="coerce")
-    df.dropna(subset=["Time"], inplace=True)
+    df.dropna(subset=["Time"], inplace=True)  # Remove invalid timestamps
     df = df.sort_values(by="Time")
 
-    # Ensure PV and CV columns exist
+    # ✅ Debug: Log timestamps
+    print(f"📌 First Timestamp in CSV: {df['Time'].iloc[0]}")
+    print(f"📌 Last Timestamp in CSV: {df['Time'].iloc[-1]}")
+
     if "PV" not in df.columns or "CV" not in df.columns:
         return JsonResponse({"error": "Missing PV/CV columns!"})
 
-    # Convert PV and CV to numeric
+    # ✅ Convert PV and CV to numeric
     df["PV"] = pd.to_numeric(df["PV"], errors="coerce")
     df["CV"] = pd.to_numeric(df["CV"], errors="coerce")
-    df.ffill(inplace=True)
+    df.ffill(inplace=True)  # Fill missing values
 
-    # ✅ Convert timestamps to ISO format for JavaScript
-    df["Time"] = df["Time"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    chart_data = df.to_dict(orient="records")  # Full dataset, no filtering
+    # ✅ Filter Data to Only Include Bump Test Window
+    bump_start = bump_test.start_time.astimezone(pytz.UTC).replace(microsecond=0)
+    bump_end = bump_test.end_time.astimezone(pytz.UTC).replace(microsecond=0)
 
-    # Prepare markers
+    print(f"📌 Filtering for bump window: {bump_start} → {bump_end}")
+
+    df_filtered = df[(df["Time"] >= bump_start) & (df["Time"] <= bump_end)]
+    print(f"✅ Before filtering: {len(df)} rows")
+    print(f"✅ After filtering: {len(df_filtered)} rows")
+
+    # ✅ Convert timestamps for frontend
+    df_filtered = df_filtered.copy()  # Prevent chained assignment
+    df_filtered["Time"] = df_filtered["Time"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    chart_data = df_filtered.to_dict(orient="records")
+
+    print(f"📌 Final Data Sent to Frontend: {len(chart_data)} points")  # Debugging
+
+    # ✅ Prepare markers
+    def format_marker(time_value):
+        return time_value.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if time_value else ""
+
     t_markers = {
-        "T1": {"time": bump_test.T1.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.T1 else "", "pv": None},
-        "T2": {"time": bump_test.T2.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.T2 else "", "pv": None},
-        "T3": {"time": bump_test.T3.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.T3 else "", "pv": None},
-        "T4": {"time": bump_test.T4.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.T4 else "", "pv": None},
+        "T1": {"time": format_marker(bump_test.T1), "pv": None},
+        "T2": {"time": format_marker(bump_test.T2), "pv": None},
+        "T3": {"time": format_marker(bump_test.T3), "pv": None},
+        "T4": {"time": format_marker(bump_test.T4), "pv": None},
     }
 
     context = {
         "trend_chart": trend_chart,
         "bump_test": bump_test,
-        "chart_data": json.dumps(chart_data, ensure_ascii=False),  # Full dataset, no filtering
+        "chart_data": json.dumps(chart_data, ensure_ascii=False),
         "t_markers": json.dumps(t_markers, ensure_ascii=False),
-        "start_time": (
-            bump_test.start_time.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.start_time else ""
-        ),
-        "end_time": (
-            bump_test.end_time.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ") if bump_test.end_time else ""
-        ),
+        "start_time": format_marker(bump_test.start_time),
+        "end_time": format_marker(bump_test.end_time),
     }
 
-    print("Start Time (UTC):", bump_test.start_time)  # Debugging
-    print("End Time (UTC):", bump_test.end_time)  # Debugging
+    print("Start Time (UTC):", bump_test.start_time)
+    print("End Time (UTC):", bump_test.end_time)
 
     return render(request, "identity_trend_detail.html", context)
 
@@ -353,30 +368,33 @@ def update_t1_t2(request, bump_test_id):
     if request.method == "POST":
         try:
             data = json.loads(request.body)
-            T1 = data.get("T1")
-            T2 = data.get("T2")
-            T3 = data.get("T3")
-            T4 = data.get("T4")
+            print(f"📌 Received data (with browser offset applied): {data}")
 
             bump_test = BumpTest.objects.get(id=bump_test_id)
 
-            def parse_datetime_flexible(dt_str):
+            def parse_iso_datetime(dt_str):
                 if not dt_str:
                     return None
                 try:
-                    return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=get_fixed_timezone(0))
-                except ValueError:
+                    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    return dt.astimezone(pytz.UTC)  # ✅ Ensure UTC storage
+                except ValueError as e:
+                    print(f"❌ Error parsing datetime: {dt_str} -> {e}")
                     return None
 
-            bump_test.T1 = parse_datetime_flexible(T1)
-            bump_test.T2 = parse_datetime_flexible(T2)
-            bump_test.T3 = parse_datetime_flexible(T3)
-            bump_test.T4 = parse_datetime_flexible(T4)
+            bump_test.T1 = parse_iso_datetime(data.get("T1"))
+            bump_test.T2 = parse_iso_datetime(data.get("T2"))
+            bump_test.T3 = parse_iso_datetime(data.get("T3"))
+            bump_test.T4 = parse_iso_datetime(data.get("T4"))
 
             bump_test.save()
+
+            print(f"✅ Successfully saved T1-T4 for Bump Test {bump_test.id}")
+            print(f"🕒 Saved Times (UTC): T1={bump_test.T1}, T2={bump_test.T2}, T3={bump_test.T3}, T4={bump_test.T4}")
             return JsonResponse({"success": True})
 
         except Exception as e:
+            print(f"❌ Error saving bump test: {e}")
             return JsonResponse({"success": False, "error": str(e)}, status=500)
 
     return JsonResponse({"success": False, "error": "Invalid request"}, status=400)

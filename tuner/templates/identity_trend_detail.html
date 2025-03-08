@@ -30,47 +30,29 @@
     document.addEventListener("DOMContentLoaded", function () {
         console.log("📌 Initializing Trend Chart...");
 
-        // ✅ Convert bump test times to UTC
         let bumpTestStart = new Date("{{ bump_test.start_time|date:'c' }}").toISOString();
         let bumpTestEnd = new Date("{{ bump_test.end_time|date:'c' }}").toISOString();
 
         console.log("📌 Bump Window Start (Forced UTC):", bumpTestStart);
         console.log("📌 Bump Window End (Forced UTC):", bumpTestEnd);
 
-        let chartData;
+        let chartData, tMarkers;
         try {
             chartData = JSON.parse(`{{ chart_data|escapejs }}`);
-            console.log("📌 Loaded Chart Data:", chartData);
-        } catch (error) {
-            console.error("❌ Error parsing chart data:", error);
-            return;
-        }
-
-        let tMarkers;
-        try {
             tMarkers = JSON.parse(`{{ t_markers|escapejs }}`);
+            console.log("📌 Loaded Chart Data:", chartData);
             console.log("📌 Raw tMarkers JSON:", tMarkers);
         } catch (error) {
-            console.error("❌ Error parsing T1-T4 markers:", error);
-            return;
-        }
-
-        if (!Array.isArray(chartData) || chartData.length === 0) {
-            console.error("❌ No data available for plotting.");
+            console.error("❌ Error parsing chart or marker data:", error);
             return;
         }
 
         function drawChart(data) {
-            // ✅ Convert all timestamps in data to UTC format
             let parsedData = data.map(d => ({
-                x: new Date(d.Time).toISOString(),  // Convert to UTC
+                x: d.Time,
                 PV: parseFloat(d.PV),
                 CV: parseFloat(d.CV)
             }));
-
-            console.log("📌 Data Sent to Plotly:", parsedData);
-            console.log("📌 First Timestamp in Data:", parsedData[0].x);
-            console.log("📌 Last Timestamp in Data:", parsedData[parsedData.length - 1].x);
 
             let pvTrace = {
                 x: parsedData.map(d => d.x),
@@ -88,45 +70,116 @@
                 line: { color: "black", width: 2, dash: "solid" }
             };
 
+            function getPVAtTime(time) {
+                let point = parsedData.find(d => d.x.startsWith(time.substring(0, 19)));
+                return point ? point.PV : null;
+            }
+
+            let markerColors = ["#D3D3D3", "#A9A9A9", "#808080", "#505050"];
+            let markers = [
+                { time: tMarkers.T1.time, pv: getPVAtTime(tMarkers.T1.time), name: "T1", color: markerColors[0] },
+                { time: tMarkers.T2.time, pv: getPVAtTime(tMarkers.T2.time), name: "T2", color: markerColors[1] },
+                { time: tMarkers.T3.time, pv: getPVAtTime(tMarkers.T3.time), name: "T3", color: markerColors[2] },
+                { time: tMarkers.T4.time, pv: getPVAtTime(tMarkers.T4.time), name: "T4", color: markerColors[3] }
+            ].filter(m => m.pv !== null);
+
+            let markerTraces = markers.map(m => ({
+                x: [m.time],
+                y: [m.pv],
+                name: m.name,
+                mode: "markers",
+                marker: { color: m.color, size: 10 }
+            }));
+
             let layout = {
                 title: "{{ trend_chart.pid_loop.name }} - Bump {{ bump_test.id }}",
-                xaxis: {
-                    title: "Time",
-                    type: "date",
-                    range: [bumpTestStart, bumpTestEnd],  // ✅ Ensure proper range
-                    showgrid: true,
-                },
+                xaxis: { title: "Time", type: "date", range: [bumpTestStart, bumpTestEnd], showgrid: true },
                 yaxis: { title: "Value" },
                 hovermode: "closest"
             };
 
-            Plotly.newPlot("identityTrendChart", [pvTrace, cvTrace], layout);
-        }
-
-        function zoomToBump(startTime, endTime) {
-            console.log(`📌 Raw Zoom to Bump Window: ${startTime} → ${endTime}`);
-
-            // ✅ Explicitly parse as UTC and prevent local conversion
-            let utcStartTime = new Date(startTime).toISOString();
-            let utcEndTime = new Date(endTime).toISOString();
-
-            console.log(`📌 Converted to UTC: ${utcStartTime} → ${utcEndTime}`);
-
-            if (document.getElementById("identityTrendChart")) {
-                Plotly.relayout("identityTrendChart", {
-                    "xaxis.range": [utcStartTime, utcEndTime]
+            Plotly.newPlot("identityTrendChart", [pvTrace, cvTrace, ...markerTraces], layout).then(function (chart) {
+                chart.on('plotly_click', function (data) {
+                    if (!selectedField) {
+                        console.log("⚠️ No field selected. Click on a T1-T4 input first.");
+                        return;
+                    }
+                    let clickedTime = data.points[0].x;
+                    console.log(`📌 Setting ${selectedField} = ${clickedTime}`);
+                    document.getElementById(selectedField).value = clickedTime;
                 });
-            } else {
-                console.error("⚠️ identityTrendChart not found! Ensure the chart is properly initialized.");
-            }
+            });
         }
+
+        let selectedField = null;
+        ["T1", "T2", "T3", "T4"].forEach(field => {
+            document.getElementById(field).addEventListener("focus", function () {
+                selectedField = field;
+                console.log("📌 Selected Field:", selectedField);
+            });
+        });
 
         drawChart(chartData);
-        zoomToBump(bumpTestStart, bumpTestEnd);
+
+        document.getElementById("saveT1T2").addEventListener("click", function () {
+            function toUTCStringWithOffset(dateStr) {
+                if (!dateStr) return null;
+                let dt = new Date(dateStr);
+                let offsetMinutes = dt.getTimezoneOffset();
+                let offsetHours = offsetMinutes / 60;
+
+                console.log(`📌 Browser Time Offset: ${offsetHours} hours`);
+
+                dt.setHours(dt.getHours() - offsetHours);  // ✅ Subtract instead of adding
+                return dt.toISOString();
+            }
+
+            let t1 = toUTCStringWithOffset(document.getElementById("T1").value);
+            let t2 = toUTCStringWithOffset(document.getElementById("T2").value);
+            let t3 = toUTCStringWithOffset(document.getElementById("T3").value);
+            let t4 = toUTCStringWithOffset(document.getElementById("T4").value);
+
+            console.log("📌 Sending T1-T4 to server (Adjusted for Browser Offset):", { T1: t1, T2: t2, T3: t3, T4: t4 });
+
+            fetch(`/update_t1_t2/{{ bump_test.id }}/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCookie("csrftoken"),
+                },
+                body: JSON.stringify({ T1: t1, T2: t2, T3: t3, T4: t4 }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log("✅ Times saved successfully!");
+                    alert("Times saved successfully!");
+                    location.reload();
+                } else {
+                    console.error("❌ Save failed:", data.error);
+                    alert("Error saving times: " + data.error);
+                }
+            })
+            .catch(error => console.error("❌ Request failed:", error));
+        });
+
+        // ✅ Fix: Add missing CSRF helper function
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== "") {
+                const cookies = document.cookie.split(";");
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.startsWith(name + "=")) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
     });
 </script>
-
-
 
 
 {% endblock %}

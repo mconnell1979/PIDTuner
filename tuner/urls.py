@@ -13,7 +13,7 @@ urlpatterns = [
     path("delete-bump/", delete_bump, name="delete_bump"),
     path('identity-trend/', identity_trend, name='identity_trend_list'),
     path('identity-trend/<int:chart_id>/<int:bump_test_id>/', identity_trend_detail, name='identity_trend_detail'),
-    path("update-t1-t2/<int:bump_test_id>/", update_t1_t2, name="update_t1_t2"),
+    path("update_t1_t2/<int:bump_test_id>/", update_t1_t2, name="update_t1_t2"),
     path("pid-calculations/", pid_calculation_list, name="pid_calculation_list"),
     path("pid-calculation/<int:loop_id>/", pid_calculation_detail, name="pid_calculation_detail"),
 ]
