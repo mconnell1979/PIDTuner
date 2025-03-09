@@ -1,50 +1,45 @@
 {% extends "core/base.html" %}
 
-{% block title %}Calculation List{% endblock %}
+{% block title %}PID Calculation List{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h2 class="mb-3">PID Calculations</h2>
+    <h2 class="mb-4">PID Calculation List</h2>
 
-    <div class="table-responsive">
-        <table class="table table-striped table-bordered">
-            <thead class="table-dark">
-                <tr>
-                    <th>PID Loop Name</th>
-                    <th>PID Type</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for pid_loop in pid_loops %}
-                <tr>
-                    <td>{{ pid_loop.name }}</td>
-                    <td>{{ pid_loop.pid_type }}</td>
-                    <td>
-                        <a href="{% url 'tuner:pid_calculation_detail' pid_loop.id %}" class="btn btn-primary btn-sm">
-                            <i class="fas fa-calculator"></i> View Calculation
-                        </a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="3" class="text-center text-muted">
-                        <em>No PID Loops available.</em>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="text-center mt-4">
-        <a href="/" class="btn btn-outline-dark">
-            <i class="fas fa-home"></i> Back to Home
-        </a>
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">PID Loops</h4>
+        </div>
+        <div class="card-body">
+            {% if pid_loops %}
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Loop Name</th>
+                            <th>PID Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pid_loop in pid_loops %}
+                        <tr>
+                            <td>{{ pid_loop.name }}</td>
+                            <td>{{ pid_loop.pid_type }}</td>
+                            <td>
+                                <a href="{% url 'tuner:pid_calculation_detail' pid_loop.id %}" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-calculator"></i> View Calculation
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="alert alert-warning text-center">
+                    No PID Loops found.
+                </div>
+            {% endif %}
+        </div>
     </div>
 </div>
-
-<!-- Bootstrap Icons and FontAwesome (if needed) -->
-<link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 {% endblock %}

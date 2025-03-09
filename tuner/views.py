@@ -1,12 +1,12 @@
 import pandas as pd
-from .models import PIDLoop, BumpTest, TrendChart
+from .models import PIDLoop, PIDCalculation, LambdaVariable, BumpTest, TrendChart
 from .forms import TrendChartUploadForm, PIDLoopForm
 import json, os, pytz
-from datetime import datetime, timedelta, timedelta, timezone
+from datetime import datetime, timedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.timezone import localtime, is_aware, get_fixed_timezone, make_aware
+from django.utils.timezone import is_aware, make_aware
 from django.utils.dateparse import parse_datetime
 from django.conf import settings
 
@@ -33,7 +33,6 @@ def pid_loop_list(request):
         return redirect("tuner:pid_loop_list")  # Redirect to refresh the page
 
     return render(request, "tuner/pid_loop_list.html", {"loops": loops})
-
 
 
 def pid_loop_detail(request, loop_id):
@@ -265,6 +264,23 @@ def save_bump(request, chart_id):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+def update_bump_tests(request, pid_calculation_id):
+    """Updates the selected Bump Tests for a given PID Calculation."""
+    if request.method == "POST":
+        data = json.loads(request.body)
+        selected_bump_ids = data.get("bump_tests", [])
+
+        pid_calculation = get_object_or_404(PIDCalculation, id=pid_calculation_id)
+        bump_tests = BumpTest.objects.filter(id__in=selected_bump_ids)
+
+        print(f"Updating PIDCalculation {pid_calculation.id} with {bump_tests.count()} bump tests.")  # Debugging
+
+        pid_calculation.bump_tests.set(bump_tests)
+        pid_calculation.save()
+
+        return JsonResponse({"success": True})
+
+
 @csrf_exempt  # ❌ Remove this if using CSRF protection
 def delete_bump(request):
     if request.method == "POST":
@@ -464,23 +480,77 @@ def pid_calculation_list(request):
     return render(request, "tuner/pid_calculation_list.html", {"pid_loops": pid_loops})
 
 
+from django.shortcuts import render, get_object_or_404
+from .models import PIDLoop, PIDCalculation, LambdaVariable, BumpTest
+
 def pid_calculation_detail(request, loop_id):
     """Display PID tuning parameters for a specific PID loop."""
     pid_loop = get_object_or_404(PIDLoop, id=loop_id)
-    pid_calculation = getattr(pid_loop, "pid_calculation", None)  # Get related PIDCalculation
+
+    # ✅ Ensure PIDCalculation exists
+    pid_calculation, created = PIDCalculation.objects.get_or_create(
+        pid_loop=pid_loop,
+        defaults={"proportional_gain": 1.0, "integral_time": 10.0, "derivative_time": 0.0, "acceptable_filter_time": 0.5}
+    )
+
+    # ✅ Ensure LambdaVariable exists
+    lambda_variable, created = LambdaVariable.objects.get_or_create(
+        pid_loop=pid_loop,
+        defaults={"lambda_value": 10.0, "min_lambda": 1.0, "max_lambda": 100.0}
+    )
+
+    # ✅ Retrieve all BumpTests associated with this PID Loop
+    available_bump_tests = BumpTest.objects.filter(trend_chart__pid_loop=pid_loop)
+
+    # ✅ Retrieve all BumpTests currently assigned to this PID Calculation
+    assigned_bump_tests = pid_calculation.bump_tests.all()
+
+    # ✅ Debugging: Print available bump tests
+    print(f"PIDCalculation {pid_calculation.id} has {assigned_bump_tests.count()} assigned bump tests.")
+
+    for bump in assigned_bump_tests:
+        print(f" - Bump Test {bump.id} (T1: {bump.T1}, T2: {bump.T2})")
 
     return render(request, "tuner/pid_calculation_detail.html", {
         "pid_loop": pid_loop,
-        "pid_calculation": pid_calculation
+        "pid_calculation": pid_calculation,
+        "available_bump_tests": available_bump_tests,
+        "assigned_bump_tests": assigned_bump_tests,
     })
 
 
 
+@csrf_exempt
+def recalculate_pid(request, loop_id):
+    """Handles recalculating PID tuning when lambda is updated."""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            new_lambda = float(data.get("lambda_value"))
 
+            pid_loop = get_object_or_404(PIDLoop, id=loop_id)
+            lambda_variable = getattr(pid_loop, "lambda_variable", None)
+            pid_calculation = getattr(pid_loop, "pid_calculation", None)
 
+            if not lambda_variable or not pid_calculation:
+                return JsonResponse({"success": False, "error": "Missing Lambda or PID Calculation"}, status=400)
 
+            lambda_variable.lambda_value = new_lambda
+            lambda_variable.save()
 
+            pid_calculation.recalculate_tuning()
 
+            return JsonResponse({
+                "success": True,
+                "kp": pid_calculation.proportional_gain,
+                "ti": pid_calculation.integral_time,
+                "td": pid_calculation.derivative_time,
+            })
+
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    return JsonResponse({"success": False, "error": "Invalid request method"}, status=400)
 
 
 

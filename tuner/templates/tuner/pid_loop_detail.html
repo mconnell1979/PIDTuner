@@ -10,6 +10,15 @@
 
     <hr>
 
+    <!-- ✅ Added Process Variable & Output Limits -->
+    <h2>Process Variable & Output Limits</h2>
+    <p><strong>PV Max:</strong> {{ pid_loop.pv_max }}</p>
+    <p><strong>PV Min:</strong> {{ pid_loop.pv_min }}</p>
+    <p><strong>Output Max:</strong> {{ pid_loop.out_max }}</p>
+    <p><strong>Output Min:</strong> {{ pid_loop.out_min }}</p>
+
+    <hr>
+
     <h2>Associated Trend Charts</h2>
     <ul>
         {% for chart in trend_charts %}

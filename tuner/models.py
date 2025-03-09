@@ -14,23 +14,73 @@ class PIDLoop(models.Model):
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
-    pid_type = models.CharField(
-        max_length=50,
-        choices=PID_TYPE_CHOICES,
-        default="1st Order"  # Default to "1st Order"
+    pid_type = models.CharField(max_length=50, choices=PID_TYPE_CHOICES, default="1st Order")
+
+    # ✅ Process Variable & Output Limits
+    pv_max = models.FloatField(default=100.0)
+    pv_min = models.FloatField(default=0.0)
+    out_max = models.FloatField(default=100.0)
+    out_min = models.FloatField(default=0.0)
+
+    # ✅ Official Selected PID Tuning (Manually Entered or Copied from PIDCalculation)
+    proportional_gain = models.FloatField(null=True, blank=True)
+    integral_time = models.FloatField(null=True, blank=True)
+    derivative_time = models.FloatField(null=True, blank=True)
+
+    # ✅ The selected PIDCalculation (if any) that was chosen as the final tuning
+    selected_pid_calculation = models.ForeignKey(
+        'PIDCalculation', on_delete=models.SET_NULL, null=True, blank=True, related_name="official_pid_loop"
     )
 
-    def save(self, *args, **kwargs):
-        """Ensure all associated BumpTests update when the PIDLoop type changes."""
-        super().save(*args, **kwargs)
-
-        # ✅ Update all associated BumpTests
-        for trend_chart in self.trendchart_set.all():
-            for bump_test in trend_chart.bumptest_set.all():
-                bump_test.save()  # ✅ Triggers update in BumpTest.save()
+    def set_official_tuning(self, pid_calculation):
+        """Sets the official PID tuning based on a selected PIDCalculation."""
+        self.selected_pid_calculation = pid_calculation
+        self.proportional_gain = pid_calculation.proportional_gain
+        self.integral_time = pid_calculation.integral_time
+        self.derivative_time = pid_calculation.derivative_time
+        self.save()
 
     def __str__(self):
         return self.name
+
+
+class BumpTest(models.Model):
+    """Model for storing bump test data associated with a trend chart."""
+
+    id = models.AutoField(primary_key=True)
+    trend_chart = models.ForeignKey("TrendChart", on_delete=models.CASCADE)
+
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    T1 = models.DateTimeField(null=True, blank=True)
+    T2 = models.DateTimeField(null=True, blank=True)
+    T3 = models.DateTimeField(null=True, blank=True)
+    T4 = models.DateTimeField(null=True, blank=True)
+
+    T1_note = models.CharField(max_length=255, blank=True, null=True)
+    T2_note = models.CharField(max_length=255, blank=True, null=True)
+    T3_note = models.CharField(max_length=255, blank=True, null=True)
+    T4_note = models.CharField(max_length=255, blank=True, null=True)
+
+    # ✅ Lambda PID Tuning Constants
+    p = models.FloatField(null=True, blank=True)
+    i = models.FloatField(null=True, blank=True)
+    d = models.FloatField(null=True, blank=True)
+    delta_pv = models.FloatField(null=True, blank=True, help_text="Change in Process Variable (ΔPV)")
+    delta_cv = models.FloatField(null=True, blank=True, help_text="Change in Process Variable (ΔPV)")
+    kc = models.FloatField(null=True, blank=True)
+
+    # ✅ Cohen-Coon PID Tuning Constants
+    p_cohen = models.FloatField(null=True, blank=True)
+    i_cohen = models.FloatField(null=True, blank=True)
+    d_cohen = models.FloatField(null=True, blank=True)
+    kc_cohen = models.FloatField(null=True, blank=True)  # ✅ Cohen-Coon Controller Gain (Kc)
+
+    created_at = models.DateTimeField(default=now)  # ✅ Store timestamps in UTC
+    updated_at = models.DateTimeField(auto_now=True)  # ✅ Auto-updates on save
+
+    def __str__(self):
+        return f"Bump Test {self.id} - {self.trend_chart.pid_loop.name}"
 
 
 class TrendChart(models.Model):
@@ -135,74 +185,6 @@ class TrendChart(models.Model):
         return df
 
 
-class BumpTest(models.Model):
-    """Model for storing bump test data associated with a trend chart."""
-
-    id = models.AutoField(primary_key=True)
-    trend_chart = models.ForeignKey("TrendChart", on_delete=models.CASCADE)
-
-    start_time = models.DateTimeField(null=True, blank=True)
-    end_time = models.DateTimeField(null=True, blank=True)
-    T1 = models.DateTimeField(null=True, blank=True)
-    T2 = models.DateTimeField(null=True, blank=True)
-    T3 = models.DateTimeField(null=True, blank=True)
-    T4 = models.DateTimeField(null=True, blank=True)
-
-    T1_note = models.CharField(max_length=255, blank=True, null=True)
-    T2_note = models.CharField(max_length=255, blank=True, null=True)
-    T3_note = models.CharField(max_length=255, blank=True, null=True)
-    T4_note = models.CharField(max_length=255, blank=True, null=True)
-
-    created_at = models.DateTimeField(default=now)  # ✅ Store timestamps in UTC
-    updated_at = models.DateTimeField(auto_now=True)  # ✅ Auto-updates on save
-
-    def save(self, *args, **kwargs):
-        """Ensure timestamps are stored in UTC and update notes based on PIDLoop type."""
-        # ✅ Convert times to UTC before saving
-        if self.start_time:
-            self.start_time = self.start_time.astimezone()
-        if self.end_time:
-            self.end_time = self.end_time.astimezone()
-        if self.T1:
-            self.T1 = self.T1.astimezone()
-        if self.T2:
-            self.T2 = self.T2.astimezone()
-        if self.T3:
-            self.T3 = self.T3.astimezone()
-        if self.T4:
-            self.T4 = self.T4.astimezone()
-
-        # ✅ Get associated PIDLoop and update notes
-        if self.trend_chart and hasattr(self.trend_chart, "pid_loop"):
-            self.update_notes(self.trend_chart.pid_loop.pid_type)
-
-        super().save(*args, **kwargs)
-
-    def update_notes(self, pid_type):
-        """Update T1-T4 notes based on PID type."""
-        pid_notes = {
-            "1st Order": ("PV Init", "PV Moved", "63%", "PV Settled"),
-            "Integrating": ("Slope 1 Start", "Slope 1 End", "Slope 2 Start", "Slope 2 End"),
-            "Integrating with Lag": ("Slope 1 Start", "Slope 1 Changed", "Slope 2 Start", "Slope 2 End"),
-        }
-        if pid_type in pid_notes:
-            self.T1_note, self.T2_note, self.T3_note, self.T4_note = pid_notes[pid_type]
-
-    def local_time_display(self, timestamp):
-        """Convert UTC timestamps to local time for display."""
-        return localtime(timestamp, get_current_timezone()) if timestamp else None
-
-    @property
-    def pid_loop_name(self):
-        """Safely get the PID loop name."""
-        if self.trend_chart and hasattr(self.trend_chart, "pid_loop"):
-            return self.trend_chart.pid_loop.name
-        return "Unknown"
-
-    def __str__(self):
-        return f"Bump Test {self.id} - {self.pid_loop_name}"
-
-
 class LambdaVariable(models.Model):
     pid_loop = models.OneToOneField(PIDLoop, on_delete=models.CASCADE, related_name="lambda_variable")
     lambda_value = models.FloatField()
@@ -214,13 +196,41 @@ class LambdaVariable(models.Model):
 
 
 class PIDCalculation(models.Model):
-    pid_loop = models.OneToOneField(PIDLoop, on_delete=models.CASCADE, related_name="pid_calculation")
+    """Stores PID tuning constants calculated using one or more Bump Tests."""
+    pid_loop = models.ForeignKey(PIDLoop, on_delete=models.CASCADE, related_name="pid_calculations")
+
+    # ✅ Many-to-Many: Multiple bump tests can contribute to a single tuning
+    bump_tests = models.ManyToManyField(BumpTest, blank=True)
+
     proportional_gain = models.FloatField()
     integral_time = models.FloatField()
     derivative_time = models.FloatField()
-    acceptable_filter_time = models.FloatField()
+    acceptable_filter_time = models.FloatField(default=0.5)
+
+    # ✅ Lambda Tuning Variables (Moved from `LambdaVariable`)
+    lambda_value = models.FloatField(default=10.0)
+    min_lambda = models.FloatField(default=1.0)
+    max_lambda = models.FloatField(default=100.0)
+
+    # ✅ Default tuning method is Lambda
+    tuning_method = models.CharField(
+        max_length=50,
+        choices=[("lambda", "Lambda"), ("cohen_coon", "Cohen-Coon")],
+        default="lambda"
+    )
+
+    def apply_tuning(self):
+        """Write tuning values to the associated bump tests (Assumed Lambda Tuning)"""
+        for bump in self.bump_tests.all():
+            if self.tuning_method == "lambda":
+                bump.p = self.proportional_gain
+                bump.i = self.integral_time
+                bump.d = self.derivative_time
+            elif self.tuning_method == "cohen_coon":
+                bump.p_cohen = self.proportional_gain
+                bump.i_cohen = self.integral_time
+                bump.d_cohen = self.derivative_time
+            bump.save()
 
     def __str__(self):
-        return f"Tuning Parameters for {self.pid_loop.name}"
-
-
+        return f"PID Calc {self.id} ({self.tuning_method})"
