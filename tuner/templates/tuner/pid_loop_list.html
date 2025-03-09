@@ -1,0 +1,69 @@
+{% extends "core/base.html" %}
+
+{% block title %}PID Loop List{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <h1>PID Loops</h1>
+        <a href="{% url 'tuner:pid_loop_create' %}" class="btn btn-success">+ Add New PID Loop</a>
+    </div>
+
+    <hr>
+
+    {% if loops %}
+    <div class="table-responsive">
+        <form method="POST">
+            {% csrf_token %}
+            <table class="table table-striped table-hover">
+                <thead class="thead-dark">
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loop in loops %}
+                    <tr>
+                        <td>
+                            <input type="text" name="name_{{ loop.id }}" value="{{ loop.name }}" class="form-control">
+                        </td>
+                        <td>
+                            <select name="pid_type_{{ loop.id }}" class="form-control">
+                                {% for choice in loop.PID_TYPE_CHOICES %}
+                                    <option value="{{ choice.0 }}" {% if loop.pid_type == choice.0 %}selected{% endif %}>
+                                        {{ choice.1 }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <input type="text" name="description_{{ loop.id }}" value="{{ loop.description|default:'' }}" class="form-control">
+                        </td>
+                        <td>
+                            <button type="submit" name="save_{{ loop.id }}" class="btn btn-outline-success btn-sm">
+                                Save
+                            </button>
+                            <button type="submit" name="delete_{{ loop.id }}" class="btn btn-outline-danger btn-sm"
+                                    onclick="return confirm('Are you sure you want to delete this PID Loop?');">
+                                Delete
+                            </button>
+                            <a href="{% url 'tuner:pid_loop_detail' loop.id %}" class="btn btn-link btn-sm">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </form>
+    </div>
+    {% else %}
+    <p class="alert alert-info">No PID Loops found.</p>
+    {% endif %}
+
+    <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
+</div>
+{% endblock %}

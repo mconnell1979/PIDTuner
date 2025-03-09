@@ -1,0 +1,21 @@
+<!doctype html>
+{% load static %}
+
+<html lang="en">
+    <head>
+        {% include "core/head.html" %}
+
+        {% block extra_js %}
+
+        {% endblock %}
+        <title> {% block title %} PID Tuner {% endblock %} </title>
+    </head>
+
+    {% include "core/navbar_registered.html" %}
+
+    <body>
+        {% block content %}
+        {% endblock %}
+    </body>
+</html>
+

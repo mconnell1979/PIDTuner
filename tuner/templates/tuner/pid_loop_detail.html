@@ -1,0 +1,45 @@
+{% extends "core/base.html" %}
+
+{% block title %}PID Loop Detail{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>PID Loop: {{ pid_loop.name }}</h1>
+    <p><strong>Description:</strong> {{ pid_loop.description|default:"No description available" }}</p>
+    <p><strong>Type:</strong> {{ pid_loop.get_pid_type_display }}</p>
+
+    <hr>
+
+    <h2>Associated Trend Charts</h2>
+    <ul>
+        {% for chart in trend_charts %}
+            <li><a href="{% url 'tuner:view_trend_chart' chart.id %}">Trend Chart #{{ chart.id }}</a></li>
+        {% empty %}
+            <li>No trend charts available.</li>
+        {% endfor %}
+    </ul>
+
+    <hr>
+
+    {% if pid_loop.lambda_variable %}
+    <h2>Lambda Variable</h2>
+    <p><strong>Lambda Value:</strong> {{ pid_loop.lambda_variable.lambda_value }}</p>
+    <p><strong>Min Lambda:</strong> {{ pid_loop.lambda_variable.min_lambda }}</p>
+    <p><strong>Max Lambda:</strong> {{ pid_loop.lambda_variable.max_lambda }}</p>
+    {% endif %}
+
+    <hr>
+
+    {% if pid_loop.pid_calculation %}
+    <h2>PID Tuning Parameters</h2>
+    <p><strong>Proportional Gain (P):</strong> {{ pid_loop.pid_calculation.proportional_gain }}</p>
+    <p><strong>Integral Time (I):</strong> {{ pid_loop.pid_calculation.integral_time }}</p>
+    <p><strong>Derivative Time (D):</strong> {{ pid_loop.pid_calculation.derivative_time }}</p>
+    <p><strong>Acceptable Filter Time:</strong> {{ pid_loop.pid_calculation.acceptable_filter_time }}</p>
+    {% endif %}
+
+    <hr>
+
+    <a href="{% url 'tuner:pid_loop_list' %}" class="btn btn-outline-dark">Back to PID Loops</a>
+</div>
+{% endblock %}

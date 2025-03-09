@@ -1,0 +1,58 @@
+{% extends "core/base.html" %}
+
+{% block title %}Trend Charts{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4 text-center">Uploaded Trend Charts</h1>
+
+    {% if charts %}
+        {% regroup charts by pid_loop as grouped_charts %}
+        <div class="accordion" id="trendChartsAccordion">
+            {% for group in grouped_charts %}
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header" id="heading{{ forloop.counter }}">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}" aria-expanded="true">
+                                📊 PID Loop: {{ group.grouper.name|default:"(No PID Loop Assigned)" }}
+                            </button>
+                        </h5>
+                    </div>
+
+                    <div id="collapse{{ forloop.counter }}" class="collapse show" aria-labelledby="heading{{ forloop.counter }}" data-bs-parent="#trendChartsAccordion">
+                        <div class="card-body">
+                            <ul class="list-group">
+                                {% for chart in group.list %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>ID:</strong> {{ chart.id }} |
+                                            <strong>Description:</strong> {{ chart.description|default:"No description provided" }}
+                                        </div>
+                                        <div>
+                                            <a href="{% url 'tuner:view_trend_chart' chart.id %}" class="btn btn-outline-primary btn-sm">
+                                                View Trend
+                                            </a>
+                                            {% if chart.csv_file %}
+                                                <a href="{{ chart.csv_file.url }}" class="btn btn-outline-success btn-sm" download>
+                                                    Download CSV
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-muted text-center">No trend charts have been uploaded yet.</p>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="{% url 'tuner:upload_trend_chart' %}" class="btn btn-success">+ Upload New Trend Chart</a>
+        <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
+    </div>
+</div>
+{% endblock %}

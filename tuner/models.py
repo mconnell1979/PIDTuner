@@ -183,7 +183,7 @@ class BumpTest(models.Model):
         pid_notes = {
             "1st Order": ("PV Init", "PV Moved", "63%", "PV Settled"),
             "Integrating": ("Slope 1 Start", "Slope 1 End", "Slope 2 Start", "Slope 2 End"),
-            "Integrating with Lag": ("Slope 1 Start", "Slope Changed", "Slope 2 Start", "Slope 2 End"),
+            "Integrating with Lag": ("Slope 1 Start", "Slope 1 Changed", "Slope 2 Start", "Slope 2 End"),
         }
         if pid_type in pid_notes:
             self.T1_note, self.T2_note, self.T3_note, self.T4_note = pid_notes[pid_type]

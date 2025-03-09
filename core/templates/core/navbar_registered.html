@@ -1,0 +1,100 @@
+{% load static %}
+{% if user.is_authenticated %}
+<div class="pos-f-t">
+  <div class="collapse" id="navbarToggleExternalContent">
+    <div class="bg-dark p-4">
+      <nav class="navbar navbar-expand-lg sticky-top navbar-dark bg-dark">
+
+      <ul class="navbar-nav mr-auto">
+          <li class="nav-item {{ home_tab|yesno:'active,' }}">
+              <a class="navbar-brand" href="/">
+                  <img src="{% static 'images/navbar_icon.svg' %}" width="30" height="30" alt="">
+                  <i>PID Tuning Toolkit</i>
+              </a>
+          </li>
+          {% if user.is_authenticated %}
+              <li class="nav-item dropdown {{ teams_tab|yesno:'active,' }}">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown3" role="button" data-toggle="dropdown"
+                     aria-haspopup="true" aria-expanded="false">
+                      Tuning Steps
+                  </a>
+                  <div class="dropdown-menu" aria-labelledby="navbarDropdown1">
+                      <a class="dropdown-item" href="#">Create PID</a>
+                      <a class="dropdown-item" href="#">Import Trend</a>
+                      <a class="dropdown-item" href="#">Highlight Bumps</a>
+                      <a class="dropdown-item" href="#">Calculation Summary</a>
+                  </div>
+              </li>
+
+              <li class="nav-item dropdown {{ ref_tab|yesno:'active,' }}">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown1" role="button" data-toggle="dropdown"
+                     aria-haspopup="true" aria-expanded="false">
+                      Database
+                  </a>
+                  <div class="dropdown-menu" aria-labelledby="navbarDropdown1">
+                      <a class="dropdown-item" href="/admin">Admin</a>
+                  </div>
+              </li>
+
+              <li class="nav-item dropdown {{ planning_tab|yesno:'active,' }}">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown2" role="button" data-toggle="dropdown"
+                     aria-haspopup="true" aria-expanded="false">
+                      Navigation
+                  </a>
+                  <div class="dropdown-menu" aria-labelledby="navbarDropdown2">
+                        <a class="dropdown-item" href="#">PID Loop List</a>
+                        <a class="dropdown-item" href="#">Upload Trend</a>
+                        <a class="dropdown-item" href="#">Trend List</a>
+                        <a class="dropdown-item" href="#">Bump List</a>
+                        <a class="dropdown-item" href="#">Calculation List</a>
+                  </div>
+              </li>
+
+          {% else %}
+              <li> <a class="nav-link" href="#">About</a> </li>
+                    <a href="#">Placeholder Link</a>
+          {% endif %}
+
+          <li>
+              {% if user.is_authenticated %}
+                  <a class="nav-link" href="/logout"> {{request.user.username}} </a>
+              {% else %}
+                  <a class="nav-link" href="/login"> Login</a>
+              {% endif %}
+          </li>
+      </ul>
+  </nav>
+
+
+    </div>
+  </div>
+  <nav class="navbar navbar-dark bg-dark">
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggleExternalContent" aria-controls="navbarToggleExternalContent" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+  </nav>
+</div>
+{% else %}
+    <nav class="navbar navbar-expand-lg sticky-top navbar-dark bg-dark">
+
+        <ul class="navbar-nav mr-auto">
+            <li class="nav-item {{ home_tab|yesno:'active,' }}">
+                <a class="navbar-brand" href="/">
+                    <img src="#" width="30" height="30" alt="">
+                    <i>Pickems Site</i>
+                </a>
+            </li>
+            <li> <a class="nav-link" href="/#scrollspyAbout">About</a> </li>
+            <li class="nav-item {{ contact_tab|yesno:'active,' }}"> <a class="nav-link" href="#">Contact</a> </li>
+            <li class="nav-item {{ workwithus_tab|yesno:'active,' }}"> <a class="nav-link" href="#">Work-With-Us</a> </li>
+            <li>
+                {% if user.is_authenticated %}
+                    <a class="nav-link" href="/logout/"> {{request.user.username}} </a>
+                {% else %}
+                    <a class="nav-link" href="/login/"> Login</a>
+                {% endif %}
+            </li>
+        </ul>
+    </nav>
+
+{% endif %}

@@ -1,0 +1,55 @@
+{% extends "core/base.html" %}
+
+{% block title %}Calculation Summary{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">PID Calculation Details</h2>
+
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">{{ pid_loop.name }}</h4>
+        </div>
+        <div class="card-body">
+            <p><strong>PID Type:</strong> {{ pid_loop.pid_type }}</p>
+
+            {% if pid_calculation %}
+                <table class="table table-bordered">
+                    <tbody>
+                        <tr>
+                            <th>Proportional Gain</th>
+                            <td>{{ pid_calculation.proportional_gain }}</td>
+                        </tr>
+                        <tr>
+                            <th>Integral Time</th>
+                            <td>{{ pid_calculation.integral_time }}</td>
+                        </tr>
+                        <tr>
+                            <th>Derivative Time</th>
+                            <td>{{ pid_calculation.derivative_time }}</td>
+                        </tr>
+                        <tr>
+                            <th>Acceptable Filter Time</th>
+                            <td>{{ pid_calculation.acceptable_filter_time }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="alert alert-warning text-center">
+                    No PID Calculation available for this PID Loop.
+                </div>
+            {% endif %}
+
+            <div class="text-center mt-4">
+                <a href="{% url 'tuner:pid_calculation_list' %}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FontAwesome for icons -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "core/base.html" %}
+
+{% block title %}Upload Trend Chart{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4 text-center">Upload Trend Chart</h1>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Existing Trend Charts</h5>
+            {% if charts %}
+                <ul class="list-group">
+                    {% for chart in charts %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ chart.pid_loop.name }}</strong> <br>
+                                <small class="text-muted">{{ chart.description }}</small>
+                            </div>
+                            <div>
+                                <a href="{% url 'tuner:view_trend_chart' chart.id %}" class="btn btn-outline-primary btn-sm">
+                                    View Trend
+                                </a>
+                                <a href="{{ chart.csv_file.url }}" download class="btn btn-outline-secondary btn-sm">
+                                    Download CSV
+                                </a>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-muted">No trend charts available.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card shadow">
+        <div class="card-body">
+            <h5 class="card-title">Upload a New Trend Chart</h5>
+            <form method="post" enctype="multipart/form-data" action="{% url 'tuner:upload_trend_chart' %}">
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label for="id_pid_loop" class="form-label">Select PID Loop:</label>
+                    {{ form.pid_loop }}
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_csv_file" class="form-label">Upload CSV File:</label>
+                    <input type="file" name="csv_file" id="id_csv_file" class="form-control">
+                </div>
+
+                <div class="mb-3">
+                    <label for="id_description" class="form-label">Description:</label>
+                    {{ form.description }}
+                </div>
+
+                <button type="submit" class="btn btn-success">Upload</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
+    </div>
+</div>
+{% endblock %}

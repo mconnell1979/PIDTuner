@@ -1,0 +1,262 @@
+{% extends "core/base.html" %}
+
+{% block title %}Bump Details{% endblock %}
+
+{% block content %}
+
+<div class="container mt-3">
+    <h5>Select T Marker to Update:</h5>
+
+<div class="row text-left">
+    <div class="col-sm-4">
+        <label class="btn btn-outline-dark active d-block btn-fixed-width">
+            <input type="radio" name="tMarkerSelection" id="selectT1" autocomplete="off" value="T1" checked hidden>
+            <span id="labelT1">T1 - {{ t_marker_notes.T1 }}</span>
+        </label>
+    </div>
+
+    <div class="col-sm-4">
+        <label class="btn btn-outline-dark d-block btn-fixed-width">
+            <input type="radio" name="tMarkerSelection" id="selectT3" autocomplete="off" value="T3" hidden>
+            <span id="labelT3">T3 - {{ t_marker_notes.T3 }}</span>
+        </label>
+    </div>
+</div>
+
+<div class="row mt-2 text-left">
+    <div class="col-sm-4">
+        <label class="btn btn-outline-dark d-block btn-fixed-width">
+            <input type="radio" name="tMarkerSelection" id="selectT2" autocomplete="off" value="T2" hidden>
+            <span id="labelT2">T2 - {{ t_marker_notes.T2 }}</span>
+        </label>
+    </div>
+
+    <div class="col-sm-4">
+        <label class="btn btn-outline-dark d-block btn-fixed-width">
+            <input type="radio" name="tMarkerSelection" id="selectT4" autocomplete="off" value="T4" hidden>
+            <span id="labelT4">T4 - {{ t_marker_notes.T4 }}</span>
+        </label>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+<!-- Ensure Chart Container Exists -->
+<div id="identityTrendChart"></div>
+
+<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    console.log("📌 Initializing Trend Chart...");
+
+    function getCSRFToken() {
+        let cookieValue = null;
+        let cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            let cookie = cookies[i].trim();
+            if (cookie.startsWith("csrftoken=")) {
+                cookieValue = cookie.split('=')[1];
+                break;
+            }
+        }
+        return cookieValue;
+    }
+
+    let chartContainer = document.getElementById("identityTrendChart");
+
+    if (!chartContainer) {
+        console.error("❌ Chart container not found! Ensure 'identityTrendChart' exists in the HTML.");
+        return;
+    }
+
+    let selectedField = "T1"; // Default selected field
+    let tMarkersUTC = {};
+
+    try {
+        let rawTMarkers = JSON.parse(`{{ t_markers|escapejs }}`);
+        console.log("📌 Received T Markers from Backend (Still in UTC):", rawTMarkers);
+
+        // ✅ Convert UTC to local time (Fix applied here)
+        ["T1", "T2", "T3", "T4"].forEach(key => {
+            if (rawTMarkers[key]?.time) {
+                let utcTime = new Date(rawTMarkers[key].time);
+                let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // ✅ Fixed: Subtract instead of add
+                tMarkersUTC[key] = { time: localTime.toISOString(), pv: null };
+            }
+        });
+
+        console.log("📌 Adjusted Initial T Markers to Local Time:", tMarkersUTC);
+    } catch (error) {
+        console.error("❌ Error parsing T markers:", error);
+    }
+
+    // ✅ Radio button selection event listener
+    document.querySelectorAll("input[name='tMarkerSelection']").forEach(radio => {
+        radio.addEventListener("change", function () {
+            selectedField = this.value;
+            console.log(`📌 Selected Field: ${selectedField}`);
+        });
+    });
+
+    function fetchUpdatedMarkersAndRedraw() {
+        console.log("🔄 Fetching Updated T Markers from Backend...");
+
+        fetch("{% url 'tuner:identity_trend_detail' trend_chart.id bump_test.id %}?ajax=1", {
+            method: "GET",
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        })
+        .then(response => response.json())
+        .then(updatedData => {
+            if (updatedData.t_markers) {
+                console.log("✅ Updated T Markers Received (Still in UTC):", updatedData.t_markers);
+
+                // ✅ Convert UTC timestamps to local time before updating markers
+                ["T1", "T2", "T3", "T4"].forEach(key => {
+                    if (updatedData.t_markers[key]?.time) {
+                        let utcTime = new Date(updatedData.t_markers[key].time);
+                        let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // ✅ Fixed
+                        tMarkersUTC[key] = { time: localTime.toISOString(), pv: null };
+                    }
+                });
+
+                console.log("✅ Adjusted T Markers to Local Time for Display:", tMarkersUTC);
+                redrawChart();
+            } else {
+                console.error("❌ No valid t_markers data found in response.");
+            }
+        })
+        .catch(error => console.error("❌ Failed to fetch updated markers:", error));
+    }
+
+    function saveTMarker(field, newTimeUTC) {
+        let payload = { [field]: newTimeUTC };
+
+        console.log(`📌 Auto-Saving ${field}: ${newTimeUTC}`);
+
+        fetch("{% url 'tuner:update_t1_t2' bump_test.id %}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": getCSRFToken() },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(updatedData => {
+            if (updatedData.success) {
+                console.log(`✅ ${field} Successfully Updated: ${updatedData[field]}`);
+                fetchUpdatedMarkersAndRedraw();
+            } else {
+                console.error(`❌ Failed to update ${field}:`, updatedData.error);
+            }
+        })
+        .catch(error => console.error("❌ Save failed:", error));
+    }
+
+    function redrawChart() {
+        console.log("🔄 Redrawing Chart with Updated T Markers...");
+
+        let parsedData = chartData.map(d => ({
+            x: d.Time,
+            PV: parseFloat(d.PV),
+            CV: parseFloat(d.CV)
+        }));
+
+        let initialXRange = [parsedData[0].x, parsedData[parsedData.length - 1].x];
+
+        let pvTrace = {
+            x: parsedData.map(d => d.x),
+            y: parsedData.map(d => d.PV),
+            name: "PV Trend",
+            mode: "lines",
+            line: { color: "#6B8E23", width: 2 }
+        };
+
+        let cvTrace = {
+            x: parsedData.map(d => d.x),
+            y: parsedData.map(d => d.CV),
+            name: "CV Trend",
+            mode: "lines",
+            line: { color: "black", width: 2, dash: "solid" }
+        };
+
+          let tMarkerColors = {
+            "T1": "#D3D3D3",  // Light Gray
+            "T2": "#B0B0B0",  // Medium-Light Gray
+            "T3": "#969696",  // Adjusted Darker Gray for T3
+            "T4": "#808080"   // Darkest Gray
+        };
+
+
+        let tMarkerTraces = ["T1", "T2", "T3", "T4"].map(key => {
+            if (tMarkersUTC[key]?.time) {
+                let localTime = new Date(tMarkersUTC[key].time);
+                let formattedTime = localTime.toISOString();
+
+                let closestPoint = parsedData.reduce((prev, curr) =>
+                    Math.abs(new Date(curr.x) - new Date(formattedTime)) < Math.abs(new Date(prev.x) - new Date(formattedTime)) ? curr : prev
+                );
+
+                return {
+                    x: [closestPoint.x],
+                    y: [closestPoint.PV],
+                    mode: "markers",
+                    marker: { size: 10, color: tMarkerColors[key], symbol: "circle" },
+                    name: key
+                };
+            }
+            return null;
+        }).filter(trace => trace !== null);
+
+        let layout = {
+            title: "{{ trend_chart.pid_loop.name }} - Bump {{ bump_test.id }}",
+            xaxis: {
+                title: "Time",
+                type: "date",
+                showgrid: true,
+                range: initialXRange
+            },
+            yaxis: { title: "Value" },
+            hovermode: "closest",
+            legend: { x: 1.1, y: 1 }
+        };
+
+        Plotly.react(chartContainer, [pvTrace, cvTrace, ...tMarkerTraces], layout);
+    }
+
+    function drawChart() {
+        console.log("📊 Initializing Chart...");
+
+        if (!chartContainer) {
+            console.error("❌ Chart container not found! Skipping chart initialization.");
+            return;
+        }
+
+        redrawChart();
+    }
+
+    let chartData;
+    try {
+        chartData = JSON.parse(`{{ chart_data|escapejs }}`);
+        console.log("📌 Parsed Chart Data:", chartData);
+    } catch (error) {
+        console.error("❌ Error parsing chart data:", error);
+        chartData = [];
+    }
+
+    drawChart();
+
+    chartContainer.on('plotly_click', function (data) {
+        let clickedTimeUTC = new Date(data.points[0].x).toISOString();
+        console.log(`📌 Clicked Time (UTC): ${clickedTimeUTC}`);
+        saveTMarker(selectedField, clickedTimeUTC);
+    });
+});
+</script>
+
+
+
+{% endblock %}

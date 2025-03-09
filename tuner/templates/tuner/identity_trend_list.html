@@ -1,0 +1,72 @@
+{% extends "core/base.html" %}
+
+{% block title %}Bump List{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4 text-dark">📊 PID Loops with Identity Trends</h1>
+
+    <p class="text-muted text-center">Select a bump test to view the identity trend.</p>
+
+    {% for pid_loop in pid_loop_data %}
+        <div class="card shadow-sm mb-4 border-0 bg-light">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">{{ pid_loop.pid_loop.name }}</h5>
+            </div>
+            <div class="card-body">
+                {% for trend_chart_data in pid_loop.trend_charts_data %}
+                    <div class="card mb-3 border-0 bg-white shadow-sm">
+                        <div class="card-header bg-dark text-white">
+                            <h6 class="mb-0">📈 Trend {{ trend_chart_data.trend_chart.id }} -
+                                {{ trend_chart_data.trend_chart.description|default:"No Description" }}</h6>
+                        </div>
+                        <div class="card-body">
+                            {% if trend_chart_data.bump_tests %}
+                                <ul class="list-group">
+                                    {% for bump in trend_chart_data.bump_tests %}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center bg-light">
+                                            <span class="text-dark">
+                                                📌 Bump {{ forloop.counter }} - {{ bump.start_time }} to {{ bump.end_time }}
+                                            </span>
+                                            <a href="{% url 'tuner:identity_trend_detail' chart_id=trend_chart_data.trend_chart.id bump_test_id=bump.id %}"
+                                               class="btn btn-outline-dark btn-sm bump-test-link">
+                                                View Trend
+                                            </a>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <p class="text-muted">No Bump Tests Available</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endfor %}
+
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        let timezoneOffset = -new Date().getTimezoneOffset() / 60;  // Convert minutes to hours
+        console.log("📌 Browser Timezone Offset (Hours):", timezoneOffset);
+
+        document.querySelectorAll(".bump-test-link").forEach(link => {
+            link.addEventListener("click", function (event) {
+                event.preventDefault();  // Stop immediate navigation
+
+                let url = new URL(link.href, window.location.origin);
+                url.searchParams.set("timezone_offset", timezoneOffset);  // Append offset
+
+                console.log("📌 Navigating to:", url.toString());
+                window.location.href = url.toString();  // Navigate with timezone offset
+            });
+        });
+    });
+</script>
+
+{% endblock %}
