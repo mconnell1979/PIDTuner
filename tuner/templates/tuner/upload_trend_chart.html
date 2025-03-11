@@ -6,6 +6,7 @@
 <div class="container mt-4">
     <h1 class="mb-4 text-center">Upload Trend Chart</h1>
 
+    <!-- ✅ Existing Trend Charts -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <h5 class="card-title">Existing Trend Charts</h5>
@@ -18,12 +19,8 @@
                                 <small class="text-muted">{{ chart.description }}</small>
                             </div>
                             <div>
-                                <a href="{% url 'tuner:view_trend_chart' chart.id %}" class="btn btn-outline-primary btn-sm">
-                                    View Trend
-                                </a>
-                                <a href="{{ chart.csv_file.url }}" download class="btn btn-outline-secondary btn-sm">
-                                    Download CSV
-                                </a>
+                                <a href="{% url 'tuner:view_trend_chart' chart.id %}" class="btn btn-outline-primary btn-sm">View Trend</a>
+                                <a href="{{ chart.csv_file.url }}" download class="btn btn-outline-secondary btn-sm">Download CSV</a>
                             </div>
                         </li>
                     {% endfor %}
@@ -34,10 +31,12 @@
         </div>
     </div>
 
+    <!-- ✅ Upload Form -->
     <div class="card shadow">
         <div class="card-body">
             <h5 class="card-title">Upload a New Trend Chart</h5>
-            <form method="post" enctype="multipart/form-data" action="{% url 'tuner:upload_trend_chart' %}">
+
+            <form id="upload-form" method="post" enctype="multipart/form-data" action="{% url 'tuner:upload_trend_chart' %}">
                 {% csrf_token %}
 
                 <div class="mb-3">
@@ -48,6 +47,7 @@
                 <div class="mb-3">
                     <label for="id_csv_file" class="form-label">Upload CSV File:</label>
                     <input type="file" name="csv_file" id="id_csv_file" class="form-control">
+                    <small class="text-muted">Only .csv and .txt files are allowed.</small>
                 </div>
 
                 <div class="mb-3">
@@ -55,13 +55,72 @@
                     {{ form.description }}
                 </div>
 
-                <button type="submit" class="btn btn-success">Upload</button>
+                <!-- ✅ Hidden field to store user timezone -->
+                <input type="hidden" name="user_timezone" id="user_timezone">
+
+                <button type="submit" class="btn btn-primary" id="upload-btn">Upload</button>
+                <div id="loading" style="display: none;" class="text-center mt-2">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Uploading...</span>
+                    </div>
+                </div>
             </form>
         </div>
     </div>
 
+    <!-- ✅ Preview Table (Shows First 10 Rows) -->
+    {% if preview_data %}
+    <div class="mt-4">
+        <h3>Preview of Saved Data</h3>
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        {% for key in preview_data.0.keys %}
+                            <th>{{ key }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_data %}
+                        <tr>
+                            {% for value in row.values %}
+                                <td>{{ value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ✅ Back to Home Button -->
     <div class="text-center mt-4">
         <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
     </div>
 </div>
+
+<!-- ✅ Automatically Detect and Set User's Timezone -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.getElementById("user_timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    document.getElementById("upload-form").addEventListener("submit", function () {
+        var fileInput = document.getElementById("id_csv_file");
+        var filePath = fileInput.value;
+        var allowedExtensions = /(\.csv|\.txt)$/i;
+
+        if (!allowedExtensions.exec(filePath)) {
+            alert("Invalid file type. Please upload a CSV or TXT file.");
+            fileInput.value = "";
+            return false;
+        }
+
+        document.getElementById("upload-btn").disabled = true;
+        document.getElementById("loading").style.display = "block";
+    });
+});
+</script>
+
 {% endblock %}
