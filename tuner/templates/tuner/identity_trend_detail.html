@@ -4,50 +4,93 @@
 
 {% block content %}
 
-<div class="container mt-3">
-    <h5>Select T Marker to Update:</h5>
+<h3 class="text-center mt-3">Identity Trend Details</h3>
 
-<div class="row text-left">
-    <div class="col-sm-4">
-        <label class="btn btn-outline-dark active d-block btn-fixed-width">
-            <input type="radio" name="tMarkerSelection" id="selectT1" autocomplete="off" value="T1" checked hidden>
-            <span id="labelT1">T1 - {{ t_marker_notes.T1 }}</span>
-        </label>
+<div class="row">
+    <!-- ✅ Left Column: T1-T4 Marker Buttons -->
+    <div class="col-md-6">
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">{{ trend_chart.pid_loop.name }}</h5>
+            </div>
+            <div class="card-body">
+                <h6 class="mb-3">Select T Marker to Update:</h6>
+
+                <div class="row text-left">
+                    <div class="col-sm-6">
+                        <label class="btn btn-outline-dark active d-block">
+                            <input type="radio" name="tMarkerSelection" id="selectT1" autocomplete="off" value="T1" checked hidden>
+                            <span id="labelT1">T1 - {{ t_marker_notes.T1 }}</span>
+                        </label>
+                    </div>
+
+                    <div class="col-sm-6">
+                        <label class="btn btn-outline-dark d-block
+                            {% if pid_loop.pid_type == '1st Order' %}disabled{% endif %}">
+                            <input type="radio" name="tMarkerSelection" id="selectT3" autocomplete="off" value="T3" hidden
+                                {% if pid_loop.pid_type == '1st Order' %}disabled{% endif %}>
+                            <span id="labelT3">T3 - {{ t_marker_notes.T3 }}</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row mt-2 text-left">
+                    <div class="col-sm-6">
+                        <label class="btn btn-outline-dark d-block">
+                            <input type="radio" name="tMarkerSelection" id="selectT2" autocomplete="off" value="T2" hidden>
+                            <span id="labelT2">T2 - {{ t_marker_notes.T2 }}</span>
+                        </label>
+                    </div>
+
+                    <div class="col-sm-6">
+                        <label class="btn btn-outline-dark d-block">
+                            <input type="radio" name="tMarkerSelection" id="selectT4" autocomplete="off" value="T4" hidden>
+                            <span id="labelT4">T4 - {{ t_marker_notes.T4 }}</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="col-sm-4">
-        <label class="btn btn-outline-dark d-block btn-fixed-width">
-            <input type="radio" name="tMarkerSelection" id="selectT3" autocomplete="off" value="T3" hidden>
-            <span id="labelT3">T3 - {{ t_marker_notes.T3 }}</span>
-        </label>
+    <!-- ✅ Right Column: Bump Test Details -->
+    <div class="col-md-6">
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Bump Test Details</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item"><strong>Start Time:</strong> {{ bump_test.start_time }}</li>
+                    <li class="list-group-item"><strong>End Time:</strong> {{ bump_test.end_time }}</li>
+                    <li class="list-group-item"><strong>ΔCV:</strong> {{ bump_test.delta_cv }}</li>
+                    <li class="list-group-item"><strong>ΔPV:</strong> {{ bump_test.delta_pv }}</li>
+                    <li class="list-group-item"><strong>Tau:</strong> {{ bump_test.tau }}</li>
+                    <li class="list-group-item"><strong>Dead Time:</strong> {{ bump_test.Td }}</li>
+                    <li class="list-group-item"><strong>Dominance:</strong> {{ bump_test.dominance }}</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 
-<div class="row mt-2 text-left">
-    <div class="col-sm-4">
-        <label class="btn btn-outline-dark d-block btn-fixed-width">
-            <input type="radio" name="tMarkerSelection" id="selectT2" autocomplete="off" value="T2" hidden>
-            <span id="labelT2">T2 - {{ t_marker_notes.T2 }}</span>
-        </label>
+
+    <!-- ✅ Ensure Chart Container Exists -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Trend Chart</h5>
+        </div>
+        <div class="card-body">
+            <div id="identityTrendChart"></div>
+        </div>
     </div>
 
-    <div class="col-sm-4">
-        <label class="btn btn-outline-dark d-block btn-fixed-width">
-            <input type="radio" name="tMarkerSelection" id="selectT4" autocomplete="off" value="T4" hidden>
-            <span id="labelT4">T4 - {{ t_marker_notes.T4 }}</span>
-        </label>
+    <!-- ✅ Back to Home Button -->
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
     </div>
+
 </div>
-
-
-
-
-
-
-
-
-<!-- Ensure Chart Container Exists -->
-<div id="identityTrendChart"></div>
 
 <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 
@@ -76,68 +119,87 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     let selectedField = "T1"; // Default selected field
-    let tMarkersUTC = {};
+    let tMarkersUTC = {}; // Keep all timestamps in UTC
 
     try {
         let rawTMarkers = JSON.parse(`{{ t_markers|escapejs }}`);
         console.log("📌 Received T Markers from Backend (Still in UTC):", rawTMarkers);
 
-        // ✅ Convert UTC to local time (Fix applied here)
-        ["T1", "T2", "T3", "T4"].forEach(key => {
+        ["T1", "T2", "T3", "T4", "TCV"].forEach(key => {
             if (rawTMarkers[key]?.time) {
-                let utcTime = new Date(rawTMarkers[key].time);
-                let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // ✅ Fixed: Subtract instead of add
-                tMarkersUTC[key] = { time: localTime.toISOString(), pv: null };
+                // ✅ Keep time as raw UTC (do NOT convert it here)
+                tMarkersUTC[key] = { time: rawTMarkers[key].time, pv: null };
             }
         });
 
-        console.log("📌 Adjusted Initial T Markers to Local Time:", tMarkersUTC);
+        console.log("📌 Stored T Markers (Still in UTC):", tMarkersUTC);
+
     } catch (error) {
         console.error("❌ Error parsing T markers:", error);
     }
+
 
     // ✅ Radio button selection event listener
     document.querySelectorAll("input[name='tMarkerSelection']").forEach(radio => {
         radio.addEventListener("change", function () {
             selectedField = this.value;
             console.log(`📌 Selected Field: ${selectedField}`);
+
+            // ✅ Remove 'active' class from all buttons
+            document.querySelectorAll("label.btn").forEach(label => {
+                label.classList.remove("active", "btn-primary");
+                label.classList.add("btn-outline-dark");  // Restore default outline color
+            });
+
+            // ✅ Add 'active' class to the selected button
+            let selectedLabel = this.closest("label");
+            if (selectedLabel) {
+                selectedLabel.classList.add("active", "btn-primary");  // Highlight active button
+                selectedLabel.classList.remove("btn-outline-dark");
+            }
         });
     });
 
-    function fetchUpdatedMarkersAndRedraw() {
-        console.log("🔄 Fetching Updated T Markers from Backend...");
+function fetchUpdatedMarkersAndRedraw() {
+    console.log("🔄 Fetching Updated T Markers from Backend...");
 
-        fetch("{% url 'tuner:identity_trend_detail' trend_chart.id bump_test.id %}?ajax=1", {
-            method: "GET",
-            headers: { "X-Requested-With": "XMLHttpRequest" }
-        })
-        .then(response => response.json())
-        .then(updatedData => {
-            if (updatedData.t_markers) {
-                console.log("✅ Updated T Markers Received (Still in UTC):", updatedData.t_markers);
+    let timezoneOffset = new Date().getTimezoneOffset() / -60;  // Convert to hours
+    console.log("📌 Using Timezone Offset:", timezoneOffset);
 
-                // ✅ Convert UTC timestamps to local time before updating markers
-                ["T1", "T2", "T3", "T4"].forEach(key => {
-                    if (updatedData.t_markers[key]?.time) {
-                        let utcTime = new Date(updatedData.t_markers[key].time);
-                        let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // ✅ Fixed
-                        tMarkersUTC[key] = { time: localTime.toISOString(), pv: null };
-                    }
-                });
+    fetch(`{% url 'tuner:identity_trend_detail' trend_chart.id bump_test.id %}?ajax=1&timezone_offset=${timezoneOffset}`, {
+        method: "GET",
+        headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+    .then(response => response.json())
+    .then(data => {  // ✅ Use 'data' instead of 'updatedData'
+        console.log("📌 Received Updated T Markers (First 5 Entries, From Backend):");
+        Object.entries(data.t_markers).slice(0, 5).forEach(([key, value]) => {
+            console.log(`${key}: ${value.time}`);
+        });
 
-                console.log("✅ Adjusted T Markers to Local Time for Display:", tMarkersUTC);
-                redrawChart();
-            } else {
-                console.error("❌ No valid t_markers data found in response.");
-            }
-        })
-        .catch(error => console.error("❌ Failed to fetch updated markers:", error));
-    }
+        if (data.t_markers) {
+            ["T1", "T2", "T3", "T4", "TCV"].forEach(key => {
+                if (data.t_markers[key]?.time) {
+                    tMarkersUTC[key] = { time: data.t_markers[key].time, pv: null };
+                }
+            });
+
+            redrawChart();
+        } else {
+            console.error("❌ No valid t_markers data found in response.");
+        }
+    })
+    .catch(error => console.error("❌ Failed to fetch updated markers:", error));
+}
+
+
 
     function saveTMarker(field, newTimeUTC) {
-        let payload = { [field]: newTimeUTC };
+        let formattedTime = new Date(newTimeUTC).toISOString();  // ✅ Ensure proper string format
 
-        console.log(`📌 Auto-Saving ${field}: ${newTimeUTC}`);
+        let payload = { [field]: formattedTime };  // Send properly formatted time
+
+        console.log(`📌 Sending ${field} = ${formattedTime} to Backend`);
 
         fetch("{% url 'tuner:update_t1_t2' bump_test.id %}", {
             method: "POST",
@@ -156,14 +218,28 @@ document.addEventListener("DOMContentLoaded", function () {
         .catch(error => console.error("❌ Save failed:", error));
     }
 
+
+
+
+
+
     function redrawChart() {
         console.log("🔄 Redrawing Chart with Updated T Markers...");
 
+        console.log("📌 Final Chart Data Sent to Plotly (First 5 Entries):");
+        chartData.slice(0, 5).forEach(d => {
+            console.log(`Time: ${d.Time}, PV: ${d.PV}, CV: ${d.CV}`);
+        });
+
         let parsedData = chartData.map(d => ({
-            x: d.Time,
+            x: new Date(d.Time),  // ✅ Let the browser handle conversion (Back to previous behavior)
             PV: parseFloat(d.PV),
             CV: parseFloat(d.CV)
         }));
+
+        console.log("📌 Browser Timezone:", Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+        console.log("📌 Plotly X-Axis Range (After Local Conversion):", parsedData.map(d => d.x).slice(0, 5));
 
         let initialXRange = [parsedData[0].x, parsedData[parsedData.length - 1].x];
 
@@ -187,22 +263,24 @@ document.addEventListener("DOMContentLoaded", function () {
             "T1": "#D3D3D3",  // Light Gray
             "T2": "#B0B0B0",  // Medium-Light Gray
             "T3": "#969696",  // Adjusted Darker Gray for T3
-            "T4": "#808080"   // Darkest Gray
+            "T4": "#808080",   // Darkest Gray
+            "TCV": "rgb(0, 162, 232)"
         };
 
-
-        let tMarkerTraces = ["T1", "T2", "T3", "T4"].map(key => {
+        let tMarkerTraces = ["T1", "T2", "T3", "T4", "TCV"].map(key => {
             if (tMarkersUTC[key]?.time) {
-                let localTime = new Date(tMarkersUTC[key].time);
-                let formattedTime = localTime.toISOString();
+                let utcTime = new Date(tMarkersUTC[key].time);  // ✅ Keep it as Date object
+                let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // ✅ Convert to Local
 
                 let closestPoint = parsedData.reduce((prev, curr) =>
-                    Math.abs(new Date(curr.x) - new Date(formattedTime)) < Math.abs(new Date(prev.x) - new Date(formattedTime)) ? curr : prev
+                    Math.abs(new Date(curr.x) - utcTime) < Math.abs(new Date(prev.x) - utcTime) ? curr : prev
                 );
 
+                let selectedYValue = (key === "TCV") ? closestPoint.CV : closestPoint.PV;
+
                 return {
-                    x: [closestPoint.x],
-                    y: [closestPoint.PV],
+                    x: [localTime.toISOString()], // ✅ Ensure local time is used for display
+                    y: [selectedYValue],
                     mode: "markers",
                     marker: { size: 10, color: tMarkerColors[key], symbol: "circle" },
                     name: key
@@ -211,18 +289,47 @@ document.addEventListener("DOMContentLoaded", function () {
             return null;
         }).filter(trace => trace !== null);
 
-        let layout = {
-            title: "{{ trend_chart.pid_loop.name }} - Bump {{ bump_test.id }}",
-            xaxis: {
-                title: "Time",
-                type: "date",
-                showgrid: true,
-                range: initialXRange
-            },
-            yaxis: { title: "Value" },
-            hovermode: "closest",
-            legend: { x: 1.1, y: 1 }
-        };
+
+         // ✅ Add Vertical Line for TCV (TDCV)
+            let shapes = [];
+
+        if (tMarkersUTC["TCV"]?.time) {
+            let utcTime = new Date(tMarkersUTC["TCV"].time);
+            let localTime = new Date(utcTime.getTime() - utcTime.getTimezoneOffset() * 60000); // Convert to local
+
+            shapes.push({
+                type: "line",
+                xref: "x",
+                yref: "paper",
+                x0: localTime.toISOString(),
+                x1: localTime.toISOString(),
+                y0: 0,
+                y1: 1,
+                line: {
+                    color: "rgb(0, 162, 232)",
+                    width: 2,
+                    dash: "dashdot"
+                }
+            });
+        }
+
+            let layout = {
+                title: "{{ trend_chart.pid_loop.name }} - Bump {{ bump_test.id }}",
+                xaxis: {
+                    title: "Time",
+                    type: "date",
+                    showgrid: true,
+                    tickmode: "auto",
+                    autorange: true
+                },
+                yaxis: { title: "Value" },
+                hovermode: "closest",
+                legend: { x: 1.1, y: 1 },
+                shapes: shapes  // ✅ Keep TCV vertical line behavior
+            };
+
+
+        console.log("📌 Plotly X-Axis Range (Before Rendering):", parsedData.map(d => d.x).slice(0, 5));
 
         Plotly.react(chartContainer, [pvTrace, cvTrace, ...tMarkerTraces], layout);
     }
@@ -247,13 +354,47 @@ document.addEventListener("DOMContentLoaded", function () {
         chartData = [];
     }
 
+    // ✅ Ensure parsedData is properly formatted for marker placement
+    let parsedData = chartData.map(d => ({
+        x: new Date(d.Time).toISOString(),  // ✅ Ensure UTC format
+        PV: parseFloat(d.PV),
+        CV: parseFloat(d.CV)
+    }));
+
+
+
     drawChart();
 
     chartContainer.on('plotly_click', function (data) {
+        if (!data.points || !data.points[0] || !data.points[0].x) {
+            console.error("❌ No valid click data detected!");
+            return;
+        }
+
         let clickedTimeUTC = new Date(data.points[0].x).toISOString();
         console.log(`📌 Clicked Time (UTC): ${clickedTimeUTC}`);
+
+        let closestPoint = parsedData.reduce((prev, curr) =>
+            Math.abs(new Date(curr.x) - new Date(clickedTimeUTC)) < Math.abs(new Date(prev.x) - new Date(clickedTimeUTC)) ? curr : prev
+        );
+
+        let selectedYValue = (selectedField === "TCV") ? closestPoint.CV : closestPoint.PV;
+
+        // ✅ Ensure we update only the selected marker
+        tMarkersUTC[selectedField] = { time: clickedTimeUTC, pv: selectedYValue };
+
+        console.log(`📌 Closest Point Found:`, closestPoint);
+        console.log(`📌 Sending ${selectedField} = ${clickedTimeUTC} to Backend`);
+
+        // ✅ Save the new marker position
         saveTMarker(selectedField, clickedTimeUTC);
     });
+
+
+
+
+
+
 });
 </script>
 

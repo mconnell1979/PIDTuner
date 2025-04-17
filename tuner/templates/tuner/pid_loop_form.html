@@ -1,0 +1,15 @@
+{% extends "core/base.html" %}
+
+{% block title %}Create New PID Loop{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Create New PID Loop</h1>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="{% url 'tuner:pid_loop_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

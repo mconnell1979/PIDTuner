@@ -1,4 +1,5 @@
-import pandas as pd
+from dateutil import parser  # Ensure this is imported at the top
+import pandas as pd, uuid
 from .models import PIDLoop, PIDCalculation, LambdaVariable, BumpTest, TrendChart
 from .forms import TrendChartUploadForm, PIDLoopForm
 import json, os, pytz
@@ -9,7 +10,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.timezone import is_aware, make_aware
 from django.utils.dateparse import parse_datetime
 from django.conf import settings
-
+from django.urls import reverse_lazy
+from django.views.generic import CreateView
+import numpy as np
 
 def pid_loop_list(request):
     loops = PIDLoop.objects.all()
@@ -57,68 +60,111 @@ def pid_loop_create(request):
     return render(request, "tuner/pid_loop_form.html", {"form": form})
 
 
+class PIDLoopCreateView(CreateView):
+    model = PIDLoop
+    form_class = PIDLoopForm
+    template_name = "tuner/pid_loop_form.html"  # Still needs a template
+    success_url = reverse_lazy("tuner:pid_loop_list")
+
+
 def upload_trend_chart(request):
+    preview_data = None
+    user_timezone = request.POST.get("user_timezone", "UTC")
+
     if request.method == "POST":
         form = TrendChartUploadForm(request.POST, request.FILES)
 
-        if form.is_valid():
-            trend_chart = form.save(commit=False)
-            file = request.FILES.get("csv_file")
+        if not form.is_valid():
+            return JsonResponse({"error": "Invalid form submission."}, status=400)
 
-            if not file:
-                return JsonResponse({"error": "No file uploaded."}, status=400)
+        file = request.FILES.get("csv_file")
+        if not file:
+            return JsonResponse({"error": "No file uploaded."}, status=400)
 
-            # ✅ Save model to retain file
-            trend_chart.save()
-            file_path = os.path.join(settings.MEDIA_ROOT, str(trend_chart.csv_file))
+        # ✅ Generate unique filename
+        unique_filename = f"{uuid.uuid4()}_{file.name}"
+        file_path = os.path.join(settings.MEDIA_ROOT, "trend_charts", unique_filename)
 
-            if not os.path.exists(file_path):
-                return JsonResponse({"error": f"File not found: {file_path}"}, status=400)
+        with open(file_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
 
-            # ✅ Detect delimiter based on file extension
-            file_ext = os.path.splitext(file.name)[-1].lower()
-            delimiter = "," if file_ext == ".csv" else "\t"
+        # ✅ Detect delimiter
+        file_ext = os.path.splitext(file.name)[-1].lower()
+        delimiter = "," if file_ext == ".csv" else "\t"
 
-            try:
-                df = pd.read_csv(file_path, delimiter=delimiter, dtype=str)
-            except Exception as e:
-                return JsonResponse({"error": f"Error reading file: {str(e)}"}, status=400)
+        # ✅ Read CSV file
+        try:
+            df = pd.read_csv(file_path, delimiter=delimiter, dtype=str)
+            print(f"📂 Raw DataFrame Columns: {df.columns.tolist()}")
+            print(f"📂 Raw DataFrame Head:\n{df.head()}")
+        except Exception as e:
+            return JsonResponse({"error": f"Error reading file: {str(e)}"}, status=400)
 
-            # ✅ Clean Timestamps (Handles mixed formats)
-            try:
-                df = TrendChart.clean_timestamps(df)
-                missing_timestamps = df["Time"].isna().sum()
-                if missing_timestamps > 0:
-                    print(f"⚠️ {missing_timestamps} rows had invalid timestamps and were dropped.")
+        # ✅ Ensure "Time" column exists
+        time_col = next((col for col in df.columns if "time" in col.lower()), None)
+        if not time_col:
+            return JsonResponse({"error": "Missing 'Time' column in CSV."}, status=400)
 
-                df.dropna(subset=["Time"], inplace=True)  # Only drop rows where timestamps failed
-            except Exception as e:
-                return JsonResponse({"error": f"Error processing timestamps: {str(e)}"}, status=400)
+        # ✅ Detect PV and CV columns dynamically
+        pv_col = next((col for col in df.columns if "pv" in col.lower()), None)
+        cv_col = next((col for col in df.columns if "cv" in col.lower()), None)
+        if not pv_col or not cv_col:
+            return JsonResponse({"error": "Missing PV/CV columns in CSV."}, status=400)
 
-            # ✅ Detect PV and CV columns correctly
-            try:
-                pv_col, cv_col = TrendChart().detect_pv_cv_columns(df)
-            except ValueError as e:
-                return JsonResponse({"error": str(e)}, status=400)
+        # ✅ Rename columns for consistency
+        df.rename(columns={time_col: "Time", pv_col: "PV", cv_col: "CV"}, inplace=True)
 
-            # ✅ Convert PV and CV to numeric safely
-            df.rename(columns={pv_col: "PV", cv_col: "CV"}, inplace=True)
-            df["PV"] = pd.to_numeric(df["PV"], errors="coerce")
-            df["CV"] = pd.to_numeric(df["CV"], errors="coerce")
+        # ✅ Use dateutil.parser for flexible datetime parsing
+        df["Time"] = df["Time"].apply(lambda x: parser.parse(x) if pd.notna(x) else pd.NaT)
 
-            # ✅ Forward-fill missing values (only within valid ranges)
-            df["PV"] = df["PV"].ffill()
-            df["CV"] = df["CV"].ffill()
+        # 🚨 Check if no valid timestamps were found
+        if df["Time"].isna().all():
+            print("🚨 ERROR: No valid timestamps found after trying all formats!")
+            return JsonResponse({"error": "Processed CSV has no valid timestamps."}, status=400)
 
-            # ✅ Save cleaned file
-            df.to_csv(file_path, index=False, encoding="utf-8")
+        # ✅ Drop NaT timestamps
+        df.dropna(subset=["Time"], inplace=True)
 
-            print(f"✅ Processed file saved: {trend_chart.csv_file.name}")
+        # ✅ Convert Time to UTC
+        try:
+            user_tz = pytz.timezone(user_timezone)
+            df["Time"] = df["Time"].dt.tz_localize(user_tz).dt.tz_convert(pytz.utc)
+        except Exception as e:
+            return JsonResponse({"error": f"Invalid timezone conversion: {str(e)}"}, status=400)
 
-            return redirect("tuner:upload_trend_chart")
+        # ✅ Convert PV and CV to numeric
+        df["PV"] = pd.to_numeric(df["PV"], errors="coerce")
+        df["CV"] = pd.to_numeric(df["CV"], errors="coerce")
+
+        # ✅ Forward-fill missing PV and CV values
+        df["PV"] = df["PV"].ffill()
+        df["CV"] = df["CV"].ffill()
+
+        # ✅ Print debugging info to confirm forward-fill
+        print(f"✅ Final Processed Data (First 5 Rows After Fill-Forward):\n{df.head()}")
+
+        # ✅ Save cleaned file before storing in the database
+        df.to_csv(file_path, index=False, encoding="utf-8")
+
+        # ✅ Save TrendChart instance
+        trend_chart = form.save(commit=False)
+        trend_chart.csv_file = os.path.join("trend_charts", unique_filename)  # 🛠️ Fix path issue
+        trend_chart.save()
+
+        # ✅ Extract preview data (first 20 rows)
+        preview_data = df.head(20).to_dict(orient="records")
+
+        print(f"✅ Processed file saved: {file.name}")
+        print(f"📊 Preview Data Sent to Template:\n {preview_data}")
+
+        return render(request, "tuner/upload_trend_chart.html", {
+            "form": form,
+            "preview_data": preview_data,
+        })
 
     else:
-        form = TrendChartUploadForm()
+        form = TrendChartUploadForm()  # ✅ Ensures form is passed when loading the page initially
 
     return render(request, "tuner/upload_trend_chart.html", {"form": form})
 
@@ -200,10 +246,18 @@ def view_trend_chart(request, chart_id):
     print(f"✅ After Processing: {len(df)} rows remaining.")
 
     # ✅ Convert timestamps for frontend compatibility
+    # Ensure "Time" is a proper datetime column before using .dt
+    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+
+    # Drop rows where Time could not be converted (if needed)
+    df.dropna(subset=["Time"], inplace=True)
+
+    # Now safely format the datetime column
     df["Time"] = df["Time"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     # ✅ Convert to JSON format for rendering
-    chart_data = df.to_dict(orient="records")
+    # Convert DataFrame to JSON safely (replace NaN with None)
+    chart_data = df.where(pd.notna(df), None).to_dict(orient="records")
 
     # ✅ Fetch associated bump tests
     bump_tests = BumpTest.objects.filter(trend_chart=trend_chart)
@@ -216,7 +270,7 @@ def view_trend_chart(request, chart_id):
         "trend_chart": trend_chart,
         "trend_chart_id": chart_id,
         "pid_name": trend_chart.pid_loop.name,
-        "chart_data": json.dumps(chart_data, ensure_ascii=False),
+        "chart_data": json.dumps(chart_data, ensure_ascii=False, allow_nan=False),
         "bump_tests": bump_tests,  # ✅ Pass bump tests to template
     }
 
@@ -264,24 +318,42 @@ def save_bump(request, chart_id):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@csrf_exempt
 def update_bump_tests(request, pid_calculation_id):
-    """Updates the selected Bump Tests for a given PID Calculation."""
+    """Handles individual bump test selections for a given PID Calculation."""
     if request.method == "POST":
-        data = json.loads(request.body)
-        selected_bump_ids = data.get("bump_tests", [])
+        try:
+            data = json.loads(request.body)
+            bump_id = data.get("bump_id")
+            assigned = data.get("assigned", False)
 
-        pid_calculation = get_object_or_404(PIDCalculation, id=pid_calculation_id)
-        bump_tests = BumpTest.objects.filter(id__in=selected_bump_ids)
+            if bump_id is None:
+                return JsonResponse({"success": False, "error": "No bump_id provided"}, status=400)
 
-        print(f"Updating PIDCalculation {pid_calculation.id} with {bump_tests.count()} bump tests.")  # Debugging
+            pid_calculation = get_object_or_404(PIDCalculation, id=pid_calculation_id)
+            bump_test = get_object_or_404(BumpTest, id=bump_id)
 
-        pid_calculation.bump_tests.set(bump_tests)
-        pid_calculation.save()
+            if assigned:
+                pid_calculation.bump_tests.add(bump_test)  # ✅ Add bump test
+            else:
+                pid_calculation.bump_tests.remove(bump_test)  # ✅ Remove bump test
 
-        return JsonResponse({"success": True})
+            pid_calculation.save()
+            pid_calculation.recalculate_tuning()  # ✅ Trigger recalculation
+            pid_calculation.save()  # ✅ Save changes
+
+            return JsonResponse({
+                "success": True,
+                "assigned_bumps": list(pid_calculation.bump_tests.values_list('id', flat=True))
+            })
+
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+    return JsonResponse({"success": False, "error": "Invalid request method"}, status=400)
 
 
-@csrf_exempt  # ❌ Remove this if using CSRF protection
+@csrf_exempt
 def delete_bump(request):
     if request.method == "POST":
         try:
@@ -351,11 +423,29 @@ def format_marker(time_value):
 def identity_trend_detail(request, chart_id, bump_test_id):
     trend_chart = get_object_or_404(TrendChart, id=chart_id)
     bump_test = get_object_or_404(BumpTest, id=bump_test_id, trend_chart=trend_chart)
+    pid_loop = trend_chart.pid_loop  # Get the associated PIDLoop
+
+    # ✅ Get timezone offset (in hours) from frontend request
+    timezone_offset = request.GET.get("timezone_offset", 0)
+    try:
+        timezone_offset = int(timezone_offset)
+    except ValueError:
+        timezone_offset = 0  # Default to 0 if invalid
+
+    # ✅ Function to convert UTC to local time using the offset
+    def convert_to_local(utc_time):
+        if utc_time:
+            return (utc_time.astimezone(pytz.UTC) + timedelta(hours=timezone_offset)).isoformat()
+        return None
 
     if not trend_chart.csv_file:
         return JsonResponse({"error": "File not found."}, status=400)
 
     df = pd.read_csv(trend_chart.csv_file.path)
+
+    print("📌 All Available Timestamps in Dataset Whe df just set:")
+    print(df["Time"].head(20))  # Print first 20 timestamps
+    print(df["Time"].tail(20))  # Print last 20 timestamps
 
     if "Time" not in df.columns:
         return JsonResponse({"error": "Missing 'Time' column in trend file!"}, status=400)
@@ -363,6 +453,10 @@ def identity_trend_detail(request, chart_id, bump_test_id):
     df["Time"] = pd.to_datetime(df["Time"], utc=True, errors="coerce")
     df.dropna(subset=["Time"], inplace=True)
     df = df.sort_values(by="Time")
+
+    print("📌 All Available Timestamps in Dataset after pd.to_dtattiem, dropna, and sort:")
+    print(df["Time"].head(20))  # Print first 20 timestamps
+    print(df["Time"].tail(20))  # Print last 20 timestamps
 
     if "PV" not in df.columns or "CV" not in df.columns:
         return JsonResponse({"error": "Missing PV/CV columns!"}, status=400)
@@ -373,19 +467,58 @@ def identity_trend_detail(request, chart_id, bump_test_id):
 
     bump_start = bump_test.start_time.astimezone(pytz.UTC).replace(microsecond=0)
     bump_end = bump_test.end_time.astimezone(pytz.UTC).replace(microsecond=0)
-    df_filtered = df[(df["Time"] >= bump_start) & (df["Time"] <= bump_end)]
+
+    print("📌 Bump Start Time (UTC):", bump_start)
+    print("📌 Bump End Time (UTC):", bump_end)
+
+    print("📌 All Available Timestamps in Dataset:")
+    print(df["Time"].head(20))  # Print first 20 timestamps
+    print(df["Time"].tail(20))  # Print last 20 timestamps
+
+    # ✅ New Fix: If filtering results in an empty DataFrame, use full dataset
+    if bump_start and bump_end:
+        df_filtered = df[(df["Time"] >= bump_start) & (df["Time"] <= bump_end)]
+        if df_filtered.empty:
+            print("⚠️ No data found within bump range! Sending full dataset instead.")
+            df_filtered = df  # ✅ Fallback: Send entire dataset
+    else:
+        df_filtered = df  # ✅ Fallback: Send entire dataset if bump times are missing
 
     df_filtered = df_filtered.copy()
-    df_filtered["Time"] = df_filtered["Time"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    df_filtered["Time"] = df_filtered["Time"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")  # ✅ Keep UTC format
+
+    print("📌 First 5 Rows of CSV Data (Before Processing):")
+    print(df.head(5))  # Logs original data
+
+    print("📌 First 5 Rows of Filtered Data (After Processing):")
+    print(df_filtered.head(5))  # Logs filtered data
+
+    # Calculate delta_cv (change in CV)
+    if not df_filtered.empty:
+        start_cv = df_filtered.iloc[0]["CV"]
+        end_cv = df_filtered.iloc[-1]["CV"]
+        bump_test.delta_cv = end_cv - start_cv
+
+        # Calculate delta_pv only if loop_type is "1st Order"
+        if pid_loop.pid_type == "1st Order":
+            start_pv = df_filtered.iloc[0]["PV"]
+            end_pv = df_filtered.iloc[-1]["PV"]
+            bump_test.delta_pv = end_pv - start_pv
+        else:
+            bump_test.delta_pv = None  # Reset if not 1st Order
+
+        bump_test.save()
 
     chart_data = df_filtered.to_dict(orient="records")
     chart_data_json = json.dumps(chart_data, ensure_ascii=False) if chart_data else "[]"
 
+    # ✅ Convert markers to UTC (Do NOT adjust for local time before sending)
     t_markers = {
-        "T1": {"time": bump_test.T1.astimezone(pytz.UTC).isoformat() if bump_test.T1 else None, "pv": None},
-        "T2": {"time": bump_test.T2.astimezone(pytz.UTC).isoformat() if bump_test.T2 else None, "pv": None},
-        "T3": {"time": bump_test.T3.astimezone(pytz.UTC).isoformat() if bump_test.T3 else None, "pv": None},
-        "T4": {"time": bump_test.T4.astimezone(pytz.UTC).isoformat() if bump_test.T4 else None, "pv": None},
+        "T1": {"time": bump_test.T1.isoformat() if bump_test.T1 else None, "pv": None},
+        "T2": {"time": bump_test.T2.isoformat() if bump_test.T2 else None, "pv": None},
+        "T3": {"time": bump_test.T3.isoformat() if bump_test.T3 else None, "pv": None},
+        "T4": {"time": bump_test.T4.isoformat() if bump_test.T4 else None, "pv": None},
+        "TCV": {"time": bump_test.TCV.isoformat() if bump_test.TCV else None, "pv": None},
     }
 
     t_marker_notes = {
@@ -398,15 +531,23 @@ def identity_trend_detail(request, chart_id, bump_test_id):
     if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.GET.get("ajax"):
         return JsonResponse({
             "t_markers": t_markers,
-            "t_marker_notes": t_marker_notes
+            "t_marker_notes": t_marker_notes,
+            "delta_cv": bump_test.delta_cv,
+            "delta_pv": bump_test.delta_pv if pid_loop.pid_type == "1st Order" else None,
         })
+
+    print("📌 Final Chart Data Sent to Frontend (First 5 Rows):")
+    print(chart_data[:5])  # Logs first 5 rows
 
     return render(request, "tuner/identity_trend_detail.html", {
         "trend_chart": trend_chart,
         "bump_test": bump_test,
+        "pid_loop": pid_loop,
         "t_markers": json.dumps(t_markers, ensure_ascii=False),
         "t_marker_notes": t_marker_notes,
         "chart_data": chart_data_json.replace("</", "<\\/"),
+        "delta_cv": bump_test.delta_cv,
+        "delta_pv": bump_test.delta_pv if pid_loop.pid_type == "1st Order" else None,
     })
 
 
@@ -423,6 +564,11 @@ def update_t1_t2(request, bump_test_id):
         print(f"📌 Received data for Bump Test {bump_test_id}: {data}")
 
         bump_test = get_object_or_404(BumpTest, id=bump_test_id)
+        trend_chart = bump_test.trend_chart
+        pid_loop = trend_chart.pid_loop
+
+        if not trend_chart.csv_file:
+            return JsonResponse({"error": "File not found."}, status=400)
 
         # ✅ Get the timezone offset from frontend (should be in hours)
         browser_timezone_offset = float(data.get("timezone_offset", 0))  # Convert to float in case it's a string
@@ -437,7 +583,7 @@ def update_t1_t2(request, bump_test_id):
                 local_dt = datetime.fromisoformat(dt_str.replace("Z", ""))  # Convert string to datetime
                 timezone_offset_seconds = browser_timezone_offset * 3600  # Convert hours to seconds
                 utc_dt = local_dt - timedelta(seconds=timezone_offset_seconds)  # Adjust to UTC
-
+                print(f"📌 MCC TimeZone Offset {browser_timezone_offset} hours")
                 print(f"📌 Adjusting {dt_str} (Local) → {utc_dt} (UTC), Offset Applied: {browser_timezone_offset} hours")
                 return utc_dt.replace(tzinfo=pytz.UTC)
             except ValueError as e:
@@ -447,30 +593,131 @@ def update_t1_t2(request, bump_test_id):
         # ✅ Only update the fields that exist in the request payload
         updated_fields = {}
 
-        for key in ["T1", "T2", "T3", "T4"]:
-            if key in data and data[key]:  # Only update if key exists and is not None/empty
-                setattr(bump_test, key, convert_local_to_utc(data[key]))
-                updated_fields[key] = getattr(bump_test, key)  # Store updated values
+        print(f"📌 Received update for {bump_test_id}: {data}")
 
-        if updated_fields:
-            bump_test.save()  # ✅ Save only if there are updates
+        # ✅ Always update T1, T2, T4, and TCV regardless of pid_type
+        for key in ["T1", "T2", "T4", "TCV"]:
+            if key in data and isinstance(data[key], str) and data[key]:
+                try:
+                    print(f"📌 Parsing {key}: {data[key]}")  # ✅ Debugging
+                    # ✅ Use dateutil.parser.parse() to handle ISO format correctly
+                    parsed_time = parser.parse(data[key])
+                    print(f"📌 Parsing Finished!!!")  # ✅ Debugging
 
-            print(f"✅ Updated Bump Test {bump_test.id}: {updated_fields}")
+                    # ✅ Ensure parsed_time is timezone-aware
+                    if parsed_time.tzinfo is None:
+                        parsed_time = parsed_time.replace(tzinfo=pytz.UTC)
 
-            return JsonResponse({
-                "success": True,
-                **{key: updated_fields[key].isoformat() if updated_fields[key] else None for key in updated_fields}
-            })
-        else:
-            print("⚠️ No valid updates received. No changes made.")
-            return JsonResponse({"success": False, "error": "No valid updates received"}, status=400)
+                    parsed_time = parsed_time.astimezone(pytz.UTC)  # Ensure final timezone is UTC
+                    print(f"✅ Successfully parsed {key}: {parsed_time} (Type: {type(parsed_time)})")  # Debugging output
+                    setattr(bump_test, key, parsed_time)
+                    print(f"📌 setattr Finished!!!")  # ✅ Debugging
+                    updated_fields[key] = parsed_time
+                    print(f"📌 updated fields key finished!!!")  # ✅ Debugging
+                except Exception as e:
+                    print(f"❌ Error parsing {key}: {data[key]} -> {e}")  # ✅ Log exact failure
+                    return JsonResponse({"success": False, "error": f"Invalid datetime format for {key}: {e}"},
+                                        status=400)
 
-    except json.JSONDecodeError:
-        print("❌ Error: Invalid JSON received")
-        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+        # ✅ Read the trend chart data
+        file_path = trend_chart.csv_file.path
+        if not os.path.exists(file_path):
+            return JsonResponse({"error": "Trend chart file not found."}, status=400)
+
+        df = pd.read_csv(file_path)
+        df["Time"] = pd.to_datetime(df["Time"], utc=True, errors="coerce")
+        df.dropna(subset=["Time"], inplace=True)
+        df = df.sort_values(by="Time")
+
+        bump_start = bump_test.start_time.astimezone(pytz.UTC).replace(microsecond=0)
+        bump_end = bump_test.end_time.astimezone(pytz.UTC).replace(microsecond=0)
+        df_filtered = df[(df["Time"] >= bump_start) & (df["Time"] <= bump_end)]
+
+        # ✅ Update TCV: Find the first time the final CV value appears
+        if not df_filtered.empty:
+            final_cv_value = df_filtered.iloc[-1]["CV"]
+            matching_rows = df_filtered[df_filtered["CV"] == final_cv_value]
+            if not matching_rows.empty:
+                bump_test.TCV = matching_rows.iloc[0]["Time"]
+                updated_fields["TCV"] = bump_test.TCV
+
+        # New Code
+        if pid_loop.pid_type == "1st Order":
+            # ✅ Use only data within bump start & end times
+            if not df_filtered.empty:
+                start_pv = df_filtered.iloc[0]["PV"]  # ✅ Use bump start PV
+                end_pv = df_filtered.iloc[-1]["PV"]  # ✅ Use bump end PV
+                delta_pv = end_pv - start_pv
+                target_pv = start_pv + 0.632 * delta_pv  # ✅ Find 63.2% response within bump window
+
+                # Find the closest timestamp where PV reaches `target_pv` inside bump range
+                closest_row = df_filtered.iloc[(df_filtered["PV"] - target_pv).abs().argsort()[:1]]
+
+                if not closest_row.empty:
+                    closest_time = closest_row["Time"].values[0]
+                    bump_test.T3 = closest_time  # ✅ Assign calculated T3
+                    updated_fields["T3"] = closest_time
+        elif pid_loop.pid_type in ["Integrating", "Integrating with Lag"]:
+            # ✅ Allow manual updates for T3
+            if "T3" in data and isinstance(data["T3"], str) and data["T3"]:
+                try:
+                    parsed_time = parse_datetime(data["T3"])
+                    if parsed_time:
+                        parsed_time = parsed_time.astimezone(pytz.UTC)
+                        bump_test.T3 = parsed_time
+                        updated_fields["T3"] = parsed_time
+                except Exception as e:
+                    return JsonResponse({"success": False, "error": f"Invalid datetime format for T3: {e}"},
+                                        status=400)
+
+        # Ensure all updated fields are stored in proper datetime format
+        for key in updated_fields:
+            if isinstance(updated_fields[key], pd.Timestamp):
+                updated_fields[key] = updated_fields[key].to_pydatetime()
+            elif isinstance(updated_fields[key], np.datetime64):
+                updated_fields[key] = pd.to_datetime(updated_fields[key]).to_pydatetime()
+            elif isinstance(updated_fields[key], str):
+                try:
+                    updated_fields[key] = parser.parse(updated_fields[key])
+                except Exception as e:
+                    print(f"❌ Error parsing {key}: {updated_fields[key]} -> {e}")
+
+        # Convert pandas.Timestamp and numpy.datetime64 to Python datetime before saving
+        for key in updated_fields:
+            if isinstance(updated_fields[key], pd.Timestamp):
+                updated_fields[key] = updated_fields[key].to_pydatetime()
+            elif isinstance(updated_fields[key], np.datetime64):
+                updated_fields[key] = pd.to_datetime(updated_fields[key]).to_pydatetime()
+            elif isinstance(updated_fields[key], str):
+                try:
+                    updated_fields[key] = parser.parse(updated_fields[key])  # ✅ Convert to datetime, NOT string
+                except Exception as e:
+                    print(f"❌ Error parsing {key}: {updated_fields[key]} -> {e}")
+
+        # 🚨 DO NOT CONVERT TO STRING BEFORE SAVING!
+        print(f"📌 Final Updated Fields Before Save (Fixed): {updated_fields}")
+
+        try:
+            # ✅ Ensure `bump_test` gets datetime objects, NOT strings
+            for key, value in updated_fields.items():
+                setattr(bump_test, key, value)
+
+            bump_test.save()
+            print(f"✅ Bump Test {bump_test_id} Saved Successfully!")
+
+        except Exception as e:
+            print(f"❌ Error during bump_test.save(): {e}")
+            return JsonResponse({"success": False, "error": f"Failed to save bump test: {e}"}, status=500)
+
+        # ✅ Now, convert to strings ONLY for the JSON response
+        return JsonResponse({
+            "success": True,
+            **{key: updated_fields[key].isoformat() if isinstance(updated_fields[key], datetime) else None for key in
+               updated_fields}
+        })
+
 
     except Exception as e:
-        print(f"❌ Error saving bump test: {e}")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
@@ -479,9 +726,6 @@ def pid_calculation_list(request):
     pid_loops = PIDLoop.objects.all()
     return render(request, "tuner/pid_calculation_list.html", {"pid_loops": pid_loops})
 
-
-from django.shortcuts import render, get_object_or_404
-from .models import PIDLoop, PIDCalculation, LambdaVariable, BumpTest
 
 def pid_calculation_detail(request, loop_id):
     """Display PID tuning parameters for a specific PID loop."""
@@ -519,38 +763,59 @@ def pid_calculation_detail(request, loop_id):
     })
 
 
-
 @csrf_exempt
 def recalculate_pid(request, loop_id):
     """Handles recalculating PID tuning when lambda is updated."""
+
+    print(f"🔍 Received request to recalculate PID for loop ID: {loop_id}")
+
     if request.method == "POST":
         try:
             data = json.loads(request.body)
             new_lambda = float(data.get("lambda_value"))
 
+            # Fetch PIDLoop using loop_id
             pid_loop = get_object_or_404(PIDLoop, id=loop_id)
-            lambda_variable = getattr(pid_loop, "lambda_variable", None)
-            pid_calculation = getattr(pid_loop, "pid_calculation", None)
 
-            if not lambda_variable or not pid_calculation:
-                return JsonResponse({"success": False, "error": "Missing Lambda or PID Calculation"}, status=400)
+            # Fetch the PIDCalculation associated with this PIDLoop
+            pid_calculation = get_object_or_404(PIDCalculation, pid_loop=pid_loop)
 
-            lambda_variable.lambda_value = new_lambda
-            lambda_variable.save()
+            print(f"✅ Found PIDCalculation: {pid_calculation}")
 
+            # ✅ Update Lambda Value and Recalculate
+            pid_calculation.lambda_value = new_lambda
             pid_calculation.recalculate_tuning()
+            pid_calculation.save()
 
-            return JsonResponse({
-                "success": True,
-                "kp": pid_calculation.proportional_gain,
-                "ti": pid_calculation.integral_time,
-                "td": pid_calculation.derivative_time,
-            })
+            # ✅ Get Updated BumpTest Data
+            bump_tests_data = [
+                {
+                    "id": bump.id,
+                    "p": round(bump.p, 3) if bump.p is not None else "-",
+                    "i": round(bump.i, 1) if bump.i is not None else "-",
+                    "d": round(bump.d, 1) if bump.d is not None else "-",
+                }
+                for bump in pid_calculation.bump_tests.all()
+            ]
+
+            return JsonResponse(
+                {
+                    "success": True,
+                    "kp": round(pid_calculation.proportional_gain, 3),
+                    "ti": round(pid_calculation.integral_time, 1),
+                    "td": round(pid_calculation.derivative_time, 1),
+                    "bump_tests": bump_tests_data,  # ✅ Send updated bump test values
+                }
+            )
 
         except Exception as e:
+            print(f"❌ Error during recalculation: {e}")
             return JsonResponse({"success": False, "error": str(e)}, status=500)
 
     return JsonResponse({"success": False, "error": "Invalid request method"}, status=400)
+
+
+
 
 
 

@@ -3,43 +3,78 @@
 {% block title %}Trend Chart Detail{% endblock %}
 
 {% block content %}
-<div id="identityTrendChart" style="width: 100%; height: 500px;"></div>
-<button id="saveBump" style="margin-top: 10px;">Save Bump</button>
 
-<!-- Display all bump tests -->
-<h2>Bump Tests</h2>
-<table border="1" style="width: 100%; margin-top: 20px; text-align: center;">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Start Time</th>
-            <th>End Time</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody id="bumpList">
-        {% if bump_tests %}
-            {% for bump in bump_tests %}
-            <tr id="bumpRow-{{ bump.id }}">
-                <td>
-                    <a href="#" onclick="zoomToBump({{ bump.id }}, '{{ bump.start_time|date:'c' }}', '{{ bump.end_time|date:'c' }}')">
-                        {{ bump.id }}
-                    </a>
-                </td>
-                <td>{{ bump.start_time|date:"Y-m-d H:i:s \U\T\C" }}</td>
-                <td>{{ bump.end_time|date:"Y-m-d H:i:s \U\T\C" }}</td>
-                <td>
-                    <button onclick="deleteBump({{ bump.id }})">Delete</button>
-                </td>
-            </tr>
-            {% endfor %}
-        {% else %}
-            <tr>
-                <td colspan="4">No bumps recorded.</td>
-            </tr>
-        {% endif %}
-    </tbody>
-</table>
+<h3 class="text-center mt-3">Trend Chart Detail</h3>
+
+<div class="container mt-4">
+
+    <!-- ✅ Card: Trend Chart -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">{{ trend_chart.pid_loop.name }} - Trend ID {{ trend_chart.id }}</h5>
+        </div>
+        <div class="card-body">
+            <div id="identityTrendChart" style="width: 100%; height: 500px;"></div>
+        </div>
+    </div>
+
+    <!-- ✅ Card: Save Bump -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">Save Bump Test - Zoom into chart to save a Bump Test</h5>
+        </div>
+        <div class="card-body text-center">
+            <button id="saveBump" class="btn btn-success">Save Bump</button>
+        </div>
+    </div>
+
+    <!-- ✅ Card: Bump Test List -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white">
+            <h5 class="mb-0">Bump Tests</h5>
+        </div>
+        <div class="card-body">
+            <table class="table table-bordered table-hover text-center">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="bumpList">
+                    {% if bump_tests %}
+                        {% for bump in bump_tests %}
+                        <tr id="bumpRow-{{ bump.id }}">
+                            <td>
+                                <a href="#" onclick="zoomToBump({{ bump.id }}, '{{ bump.start_time|date:'c' }}', '{{ bump.end_time|date:'c' }}')">
+                                    {{ bump.id }}
+                                </a>
+                            </td>
+                            <td>{{ bump.start_time|date:"Y-m-d H:i:s \U\T\C" }}</td>
+                            <td>{{ bump.end_time|date:"Y-m-d H:i:s \U\T\C" }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" onclick="deleteBump({{ bump.id }})">Delete</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-muted">No bumps recorded.</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ✅ Back to Home Button -->
+    <div class="text-center mt-4">
+        <a href="/" class="btn btn-outline-dark mt-3">Back to Home</a>
+    </div>
+
+</div>
 
 <!-- Load latest Plotly.js -->
 <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
