@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="800" height="800" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Background -->
+    <rect width="100%" height="100%" fill="#2B2B2B"/> <!-- Dark Gray Background -->
+    
+    <!-- Gridlines -->
+    <g stroke="#B0B0B0" stroke-width="0.5" opacity="0.5"> <!-- Light Gray Gridlines -->
+        <!-- Vertical lines -->
+        <line x1="100" y1="0" x2="100" y2="800"/>
+        <line x1="200" y1="0" x2="200" y2="800"/>
+        <line x1="300" y1="0" x2="300" y2="800"/>
+        <line x1="400" y1="0" x2="400" y2="800"/>
+        <line x1="500" y1="0" x2="500" y2="800"/>
+        <line x1="600" y1="0" x2="600" y2="800"/>
+        <line x1="700" y1="0" x2="700" y2="800"/>
+        
+        <!-- Horizontal lines -->
+        <line x1="0" y1="100" x2="800" y2="100"/>
+        <line x1="0" y1="200" x2="800" y2="200"/>
+        <line x1="0" y1="300" x2="800" y2="300"/>
+        <line x1="0" y1="400" x2="800" y2="400"/>
+        <line x1="0" y1="500" x2="800" y2="500"/>
+        <line x1="0" y1="600" x2="800" y2="600"/>
+        <line x1="0" y1="700" x2="800" y2="700"/>
+    </g>
+
+    <!-- Sine wave -->
+    <path d="M 0 400 
+             C 100 200, 200 600, 300 400
+             C 400 200, 500 600, 600 400
+             C 700 200, 800 600, 900 400" 
+          stroke="white" fill="none" stroke-width="2"/> <!-- White Sine Wave -->
+
+    <!-- First-order curve (linear) -->
+    <line x1="50" y1="700" x2="750" y2="100" stroke="#7CB342" stroke-width="3"/> <!-- Muted Green Curve -->
+
+    <!-- Axes -->
+    <line x1="0" y1="400" x2="800" y2="400" stroke="white" stroke-width="2"/> <!-- White X-Axis -->
+    <line x1="400" y1="0" x2="400" y2="800" stroke="white" stroke-width="2"/> <!-- White Y-Axis -->
+</svg>
